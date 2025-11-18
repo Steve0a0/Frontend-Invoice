@@ -2,7 +2,7 @@
 import { useSearchParams } from "react-router-dom";
 import { FaPaperPlane, FaTimes, FaFileAlt, FaPaypal, FaCcStripe, FaEnvelope, FaDollarSign } from "react-icons/fa";
 import toast from "react-hot-toast";
-import ChooseTemplateModal from "./ChooseTemplateModal"; 
+import ChooseTemplateModal from "./chooseTemplateModal"; 
 import { usePaymentManagement } from "../context/PaymentContext";
 import { API_BASE_URL } from '../config/api';
 
