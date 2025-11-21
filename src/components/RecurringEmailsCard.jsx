@@ -501,9 +501,9 @@ export default function RecurringEmailsCard({ refreshKey }) {
                               <span className="text-xs text-gray-400">
                                 #{invoicesInGroup.length - index}
                               </span>
-                              <span className="text-xs text-gray-500">â€¢</span>
+                              <span className="text-xs text-gray-500">•</span>
                               <span className="text-xs text-gray-400">{invoice.workType}</span>
-                              <span className="text-xs text-gray-500">â€¢</span>
+                              <span className="text-xs text-gray-500">•</span>
                               <FaCalendarAlt className="text-blue-400 text-xs" />
                               <span className="text-xs text-gray-400">{new Date(invoice.date).toLocaleDateString("en-US", {
                                 month: "short",
@@ -511,7 +511,7 @@ export default function RecurringEmailsCard({ refreshKey }) {
                                 hour: "2-digit",
                                 minute: "2-digit",
                               })}</span>
-                              <span className="text-xs text-gray-500">â€¢</span>
+                              <span className="text-xs text-gray-500">•</span>
                               <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
                                 invoice.status?.toLowerCase() === 'sent' ? 'bg-green-500/20 text-green-400' :
                                 invoice.status?.toLowerCase() === 'paid' ? 'bg-blue-500/20 text-blue-400' :
@@ -701,7 +701,7 @@ export default function RecurringEmailsCard({ refreshKey }) {
                         </div>
                         <div className="flex gap-4 text-xs text-gray-400">
                           <span>Rate: {getCurrencySymbol(viewingTemplate.currency)}{task.rate || 0}</span>
-                          <span>â€¢</span>
+                          <span>•</span>
                           <span>Hours: {task.hours || 0}</span>
                         </div>
                       </div>

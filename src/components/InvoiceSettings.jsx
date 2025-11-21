@@ -64,32 +64,32 @@ export default function InvoiceSettings() {
       icon: FaClock,
       title: "Hourly Rate",
       description: "Charge by the hour",
-      fields: "Description â€¢ Rate ($/hr) â€¢ Hours â€¢ Total",
-      example: "Web Development â€¢ $75/hr â€¢ 10 hrs â€¢ $750"
+      fields: "Description • Rate ($/hr) • Hours • Total",
+      example: "Web Development • $75/hr • 10 hrs • $750"
     },
     {
       value: "fixed_price",
       icon: FaBoxOpen,
       title: "Fixed Price",
       description: "Charge per item/unit",
-      fields: "Description â€¢ Quantity â€¢ Unit Price â€¢ Total",
-      example: "Website Design â€¢ 1 â€¢ $2,500 â€¢ $2,500"
+      fields: "Description • Quantity • Unit Price • Total",
+      example: "Website Design • 1 • $2,500 • $2,500"
     },
     {
       value: "daily_rate",
       icon: FaCalendarAlt,
       title: "Daily Rate",
       description: "Charge by the day",
-      fields: "Description â€¢ Rate ($/day) â€¢ Days â€¢ Total",
-      example: "Consulting â€¢ $500/day â€¢ 5 days â€¢ $2,500"
+      fields: "Description • Rate ($/day) • Days • Total",
+      example: "Consulting • $500/day • 5 days • $2,500"
     },
     {
       value: "simple",
       icon: FaDollarSign,
       title: "Simple Amount",
       description: "Just description and amount",
-      fields: "Description â€¢ Amount",
-      example: "Project Milestone â€¢ $5,000"
+      fields: "Description • Amount",
+      example: "Project Milestone • $5,000"
     }
   ];
 

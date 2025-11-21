@@ -264,9 +264,9 @@ export default function InvoiceTemplates() {
               {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
             </button>
             <div className="mt-3 text-xs text-gray-500 space-y-1">
-              <p>â€¢ Formats: PNG, JPEG, SVG</p>
-              <p>â€¢ Max size: 5MB</p>
-              <p>â€¢ Recommended: 300Ã—150px</p>
+              <p>• Formats: PNG, JPEG, SVG</p>
+              <p>• Max size: 5MB</p>
+              <p>• Recommended: 300Ã—150px</p>
             </div>
           </div>
         </div>

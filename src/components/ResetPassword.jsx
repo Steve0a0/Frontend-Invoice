@@ -141,7 +141,7 @@ export default function ResetPassword() {
                       <p className="font-semibold text-xs mb-1">Password Requirements:</p>
                       <ul className="text-xs space-y-0.5">
                         {errors.map((error, index) => (
-                          <li key={index}>â€¢ {error}</li>
+                          <li key={index}>• {error}</li>
                         ))}
                       </ul>
                     </div>
@@ -206,19 +206,19 @@ export default function ResetPassword() {
                 <p className="text-xs text-blue-300 font-semibold mb-1.5">Password must contain:</p>
                 <ul className="text-xs text-gray-300 space-y-0.5">
                   <li className={password.length >= 8 ? "text-green-400" : ""}>
-                    â€¢ At least 8 characters
+                    • At least 8 characters
                   </li>
                   <li className={/[a-z]/.test(password) ? "text-green-400" : ""}>
-                    â€¢ One lowercase letter
+                    • One lowercase letter
                   </li>
                   <li className={/[A-Z]/.test(password) ? "text-green-400" : ""}>
-                    â€¢ One uppercase letter
+                    • One uppercase letter
                   </li>
                   <li className={/[0-9]/.test(password) ? "text-green-400" : ""}>
-                    â€¢ One number
+                    • One number
                   </li>
                   <li className={/[^a-zA-Z0-9]/.test(password) ? "text-green-400" : ""}>
-                    â€¢ One special character
+                    • One special character
                   </li>
                 </ul>
               </div>

@@ -472,12 +472,12 @@ export default function CustomFieldsSettings() {
 
       {/* Help Section */}
       <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mt-6">
-        <h3 className="font-semibold text-blue-400 mb-2">ðŸ’¡ How to use custom fields</h3>
+        <h3 className="font-semibold text-blue-400 mb-2">💡 How to use custom fields</h3>
         <ul className="text-sm text-gray-300 space-y-1">
-          <li>â€¢ Custom fields will appear when creating/editing invoices</li>
-          <li>â€¢ Use placeholders like <code className="text-purple-400">{"{{field_name}}"}</code> in your email and invoice templates</li>
-          <li>â€¢ Fields are automatically included in recurring invoices</li>
-          <li>â€¢ Toggle "Show in Invoice/Email" to control where fields appear</li>
+          <li>• Custom fields will appear when creating/editing invoices</li>
+          <li>• Use placeholders like <code className="text-purple-400">{"{{field_name}}"}</code> in your email and invoice templates</li>
+          <li>• Fields are automatically included in recurring invoices</li>
+          <li>• Toggle "Show in Invoice/Email" to control where fields appear</li>
         </ul>
       </div>
 

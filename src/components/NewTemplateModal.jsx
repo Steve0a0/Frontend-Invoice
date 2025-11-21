@@ -399,7 +399,7 @@ export default function NewTemplateModal({ isOpen, onClose, onSuccess }) {
                   <span>HTML Template *</span>
                 </label>
                 <span className="text-xs text-gray-400">
-                  Type &#123;&#123; for placeholders â€¢ {templateHTML.length} chars
+                  Type &#123;&#123; for placeholders • {templateHTML.length} chars
                 </span>
               </div>
               <textarea
