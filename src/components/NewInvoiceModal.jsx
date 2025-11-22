@@ -1,9 +1,58 @@
 ﻿import { useState, useEffect } from "react";
-import { FaTimes, FaTrash, FaPlus, FaCalendarAlt, FaUser, FaBriefcase, FaDollarSign } from "react-icons/fa";
+import { FaTimes, FaTrash, FaPlus, FaCalendarAlt, FaUser, FaBriefcase, FaDollarSign, FaPercentage } from "react-icons/fa";
 import jwtDecode from "jwt-decode";
 import { usePaymentManagement } from "../context/PaymentContext";
 import toast from "react-hot-toast";
 import { API_BASE_URL } from '../config/api';
+
+const itemStructureOptions = [
+  { value: "hourly", label: "Hourly Rate", helper: "Charge per hour (rate x hours)" },
+  { value: "fixed_price", label: "Fixed Price", helper: "Charge per unit (quantity x unit price)" },
+  { value: "daily_rate", label: "Daily Rate", helper: "Charge per day (rate x days)" },
+  { value: "simple", label: "Simple Amount", helper: "Single amount per line item" },
+];
+
+const calculateTaskTotal = (task, structure) => {
+  if (structure === "hourly") {
+    return (Number(task.hours) || 0) * (Number(task.rate) || 0);
+  }
+  if (structure === "fixed_price") {
+    return (Number(task.quantity) || 0) * (Number(task.unitPrice) || 0);
+  }
+  if (structure === "daily_rate") {
+    return (Number(task.days) || 0) * (Number(task.rate) || 0);
+  }
+  if (structure === "simple") {
+    return Number(task.amount) || 0;
+  }
+  return 0;
+};
+
+const remapTaskForStructure = (task, structure) => {
+  const normalizedTask = {
+    id: task.id || Date.now(),
+    description: task.description || "",
+  };
+
+  if (structure === "hourly") {
+    normalizedTask.rate = Number(task.rate) || 0;
+    normalizedTask.hours = Number(task.hours) || 0;
+  } else if (structure === "fixed_price") {
+    normalizedTask.quantity = Number(task.quantity) || 0;
+    normalizedTask.unitPrice = Number(task.unitPrice) || 0;
+  } else if (structure === "daily_rate") {
+    normalizedTask.rate = Number(task.rate) || 0;
+    normalizedTask.days = Number(task.days) || 0;
+  } else if (structure === "simple") {
+    const amountValue = Number(
+      task.amount !== undefined ? task.amount : task.total
+    );
+    normalizedTask.amount = Number.isNaN(amountValue) ? 0 : amountValue;
+  }
+
+  normalizedTask.total = calculateTaskTotal(normalizedTask, structure);
+  return normalizedTask;
+};
 
 export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
   const [formData, setFormData] = useState({
@@ -12,7 +61,7 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
     date: "",
     workType: "",
     currency: "USD",
-    tasks: [{ id: 1, description: "", rate: 0, hours: 0, total: 0 }],
+    tasks: [remapTaskForStructure({ id: 1, description: "" }, "hourly")],
     notes: "",
     customFields: {},
   });
@@ -20,9 +69,28 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
   const [userId, setUserId] = useState(null);
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [itemStructure, setItemStructure] = useState("hourly"); // Default to hourly
+  const [vatEnabled, setVatEnabled] = useState(false);
+  const [vatRate, setVatRate] = useState("");
+  const [vatNumber, setVatNumber] = useState("");
   const { paymentManagementEnabled } = usePaymentManagement();
   const workTypes = ["Consulting", "Development", "Design"];
   const currencies = ["USD", "EUR", "GBP"];
+
+  const applyItemStructure = (structure) => {
+    setItemStructure(structure);
+    setFormData((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((task) => remapTaskForStructure(task, structure)),
+    }));
+  };
+
+  const handleItemStructureSelect = (structure) => {
+    applyItemStructure(structure);
+  };
+
+  const selectedStructureMeta = itemStructureOptions.find(
+    (option) => option.value === itemStructure
+  );
 
   // Get currency symbol based on selected currency
   const getCurrencySymbol = (currency) => {
@@ -92,7 +160,8 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
         });
         if (response.ok) {
           const userData = await response.json();
-          setItemStructure(userData.itemStructure || "hourly");
+          const preferredStructure = userData.itemStructure || "hourly";
+          applyItemStructure(preferredStructure);
         }
       } catch (error) {
         console.error("Error fetching user settings:", error);
@@ -110,6 +179,17 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handleVatToggle = () => {
+    setVatEnabled((prev) => {
+      const next = !prev;
+      if (!next) {
+        setVatRate("");
+        setVatNumber("");
+      }
+      return next;
+    });
+  };
+
   const handleCustomFieldChange = (fieldName, value) => {
     setFormData({
       ...formData,
@@ -124,37 +204,13 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
     const updatedTasks = [...formData.tasks];
     updatedTasks[index][field] = value;
     
-    // Calculate total based on item structure
-    if (itemStructure === 'hourly') {
-      updatedTasks[index].total = (updatedTasks[index].hours || 0) * (updatedTasks[index].rate || 0);
-    } else if (itemStructure === 'fixed_price') {
-      updatedTasks[index].total = (updatedTasks[index].quantity || 0) * (updatedTasks[index].unitPrice || 0);
-    } else if (itemStructure === 'daily_rate') {
-      updatedTasks[index].total = (updatedTasks[index].days || 0) * (updatedTasks[index].rate || 0);
-    } else if (itemStructure === 'simple') {
-      updatedTasks[index].total = updatedTasks[index].amount || 0;
-    }
+    updatedTasks[index].total = calculateTaskTotal(updatedTasks[index], itemStructure);
     
     setFormData({ ...formData, tasks: updatedTasks });
   };
 
   const addTask = () => {
-    const newTask = { id: Date.now(), description: "", total: 0 };
-    
-    // Add structure-specific fields
-    if (itemStructure === 'hourly') {
-      newTask.rate = 0;
-      newTask.hours = 0;
-    } else if (itemStructure === 'fixed_price') {
-      newTask.quantity = 0;
-      newTask.unitPrice = 0;
-    } else if (itemStructure === 'daily_rate') {
-      newTask.rate = 0;
-      newTask.days = 0;
-    } else if (itemStructure === 'simple') {
-      newTask.amount = 0;
-    }
-    
+    const newTask = remapTaskForStructure({ id: Date.now(), description: "" }, itemStructure);
     setFormData({
       ...formData,
       tasks: [...formData.tasks, newTask],
@@ -170,7 +226,15 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
     }
   };
 
-  const totalAmount = formData.tasks.reduce((sum, task) => sum + task.total, 0);
+  const subtotalAmount = formData.tasks.reduce(
+    (sum, task) => sum + (Number(task.total) || 0),
+    0
+  );
+  const parsedVatRate = Number(vatRate) || 0;
+  const vatAmount = vatEnabled && parsedVatRate > 0
+    ? (subtotalAmount * parsedVatRate) / 100
+    : 0;
+  const totalWithVat = subtotalAmount + vatAmount;
 
   // Validate invoice data
   const validateInvoiceData = () => {
@@ -178,11 +242,28 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
         toast.error("Please fill in all required fields.");
         return false;
     }
+    if (vatEnabled && parsedVatRate <= 0) {
+        toast.error("Please enter a valid VAT percentage.");
+        return false;
+    }
     return true;
   };
 
   // Prepare invoice data object
   const prepareInvoiceData = () => {
+    const customFieldsWithVat = { ...formData.customFields };
+    if (vatEnabled && parsedVatRate > 0) {
+        customFieldsWithVat._systemVat = {
+            enabled: true,
+            rate: parsedVatRate,
+            number: vatNumber || "",
+            amount: Number(vatAmount.toFixed(2)),
+            subtotal: Number(subtotalAmount.toFixed(2)),
+        };
+    } else if (customFieldsWithVat._systemVat) {
+        delete customFieldsWithVat._systemVat;
+    }
+
     const invoiceData = {
         userId: userId || "unknown-user",
         client: formData.client,
@@ -213,9 +294,9 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
             return taskData;
         }),
         notes: formData.notes,
-        totalAmount: Number(totalAmount.toFixed(2)),
+        totalAmount: Number(totalWithVat.toFixed(2)),
         status: "Draft",
-        customFields: formData.customFields,
+        customFields: customFieldsWithVat,
         itemStructure: itemStructure, // Include item structure in invoice
     };
 
@@ -364,6 +445,28 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
                 >
                   {currencies.map((cur) => <option key={cur} value={cur}>{cur}</option>)}
                 </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-400 mb-1">
+                  Item Structure
+                </label>
+                <select
+                  value={itemStructure}
+                  onChange={(e) => handleItemStructureSelect(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-white text-sm"
+                >
+                  {itemStructureOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {selectedStructureMeta && (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {selectedStructureMeta.helper}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -627,6 +730,71 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
                 </div>
               </div>
             )}
+            <div className="bg-gray-900/70 border border-gray-700 rounded-xl p-4 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-500/20 text-blue-300 p-2 rounded-lg">
+                    <FaPercentage className="text-base" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">VAT & Tax Details</p>
+                    <p className="text-[11px] text-gray-400">Toggle to include VAT breakdown on this invoice.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-gray-400">
+                  {/* <span>{vatEnabled ? "Enabled" : "Disabled"}</span> */}
+                  <button
+                    type="button"
+                    onClick={handleVatToggle}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${
+                      vatEnabled ? "bg-blue-500" : "bg-gray-600"
+                    }`}
+                    title="Toggle VAT"
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
+                        vatEnabled ? "translate-x-5" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+              {vatEnabled && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 transition-all duration-200">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">
+                      VAT Number
+                    </label>
+                    <input
+                      type="text"
+                      value={vatNumber}
+                      onChange={(e) => setVatNumber(e.target.value)}
+                      placeholder="Registration number"
+                      className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 text-sm"
+                    />
+                  </div>
+                   <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">
+                      VAT Percentage (%)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={vatRate}
+                        onChange={(e) => setVatRate(e.target.value)}
+                        placeholder="e.g. 20"
+                        className="w-full pl-10 pr-3 py-2 bg-gray-950 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 text-sm"
+                      />
+                      <span className="absolute inset-y-0 left-0 flex items-center justify-center w-9 text-gray-500 text-xs border-r border-gray-700">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Notes - Compact */}
             <div>
@@ -645,16 +813,34 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
 
             {/* Total Amount - Compact */}
             <div className="bg-gradient-to-r from-blue-600/20 to-blue-700/20 p-3 rounded-xl border-2 border-blue-500/30">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-start">
+                <div className="flex flex-col space-y-1 text-sm">
+                  <div className="flex items-center space-x-2 text-gray-300">
+                    <span>Subtotal</span>
+                    <span className="font-semibold">
+                      {formData.currency} {subtotalAmount.toFixed(2)}
+                    </span>
+                  </div>
+                  {vatEnabled && (
+                    <div className="flex items-center space-x-2 text-gray-400 text-xs">
+                      <span>VAT ({parsedVatRate || 0}%)</span>
+                      <span className="font-semibold text-gray-200">
+                        {formData.currency} {vatAmount.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center space-x-2">
                   <div className="bg-blue-500/20 p-2 rounded-lg">
                     <FaDollarSign className="text-lg text-blue-400" />
                   </div>
-                  <span className="text-sm font-semibold text-gray-300">Total Amount</span>
+                  <div className="text-right">
+                    <p className="text-[11px] uppercase tracking-wide text-blue-200">Total</p>
+                    <p className="text-2xl font-bold text-white">
+                      {formData.currency} {totalWithVat.toFixed(2)}
+                    </p>
+                  </div>
                 </div>
-                <span className="text-2xl font-bold text-white">
-                  {formData.currency} {totalAmount.toFixed(2)}
-                </span>
               </div>
             </div>
           </form>
@@ -724,4 +910,3 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
     </>
   );
 }
-

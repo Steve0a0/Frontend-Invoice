@@ -4,8 +4,7 @@ import EmailTemplates from "./EmailTemplates";
 import InvoiceTemplates from "./InvoiceTemplates";
 import BankDetailsSettings from "./BankDetailsSettings";
 import CustomFieldsSettings from "./CustomFieldsSettings";
-import InvoiceSettings from "./InvoiceSettings";
-import { Eye, EyeOff, Mail, CreditCard, DollarSign, Key, Lock, Shield, ArrowLeft, Home, Plug, FileText, ClipboardList, Building2, Settings } from "lucide-react"; 
+import { Eye, EyeOff, Mail, CreditCard, DollarSign, Key, Lock, Shield, ArrowLeft, Home, Plug, FileText, Building2, Settings } from "lucide-react"; 
 import { usePaymentManagement } from "../context/PaymentContext";
 import { API_BASE_URL } from '../config/api';
 
@@ -54,7 +53,6 @@ export default function SettingsPage({ initialTab = "email", hideTabs = false })
     { id: "email", label: "Integration", icon: Plug },
     { id: "templates", label: "Email Templates", icon: Mail },
     { id: "invoicetemplates", label: "Invoice Templates", icon: FileText },
-    { id: "invoicesettings", label: "Invoice Settings", icon: ClipboardList },
     { id: "bank", label: "Bank Details", icon: Building2 },
     { id: "customfields", label: "Custom Fields", icon: Settings },
   ];
@@ -151,7 +149,6 @@ export default function SettingsPage({ initialTab = "email", hideTabs = false })
           )}
           {activeTab === "templates" && <EmailTemplates />}
           {activeTab === "invoicetemplates" && <InvoiceTemplates />}
-          {activeTab === "invoicesettings" && <InvoiceSettings />}
           {activeTab === "bank" && <BankDetailsSettings />}
           {activeTab === "customfields" && <CustomFieldsSettings />}
         </div>
@@ -471,5 +468,3 @@ function SaveButton({ text, onClick, color = 'blue' }) {
     </button>
   );
 }
-
-

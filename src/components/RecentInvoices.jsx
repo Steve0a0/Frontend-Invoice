@@ -328,7 +328,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
             });
 
             if (response.ok) {
-                toast.success(`âœ“ Recurring invoices stopped for ${invoiceToStopRecurring.client}`);
+                toast.success(`Recurring invoices stopped for ${invoiceToStopRecurring.client}`);
                 setIsStopRecurringModalOpen(false);
                 setInvoiceToStopRecurring(null);
                 if (setRefreshKey) {
@@ -1175,7 +1175,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                                             onChange={(e) => setRecurringConfig({...recurringConfig, emailTemplateId: e.target.value})}
                                             className="w-full px-3 py-2.5 bg-gray-800 text-white rounded-lg border border-gray-700 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm"
                                         >
-                                            <option value="">ðŸ“§ Default Message</option>
+                                            <option value="">Default Message</option>
                                             {emailTemplates.map(template => (
                                                 <option key={template.id} value={template.id}>
                                                     {template.name}

@@ -105,7 +105,7 @@ export default function RecurringInvoices() {
       });
 
       if (response.ok) {
-        toast.success(`âœ“ Recurring emails stopped for ${clientName}`);
+        toast.success(`Recurring emails stopped for ${clientName}`);
         fetchRecurringInvoices();
       } else {
         toast.error("Failed to stop recurring invoice");

@@ -711,16 +711,19 @@ export default function RecurringEmailsCard({ refreshKey }) {
               )}
 
               {/* Custom Fields */}
-              {viewingTemplate.customFields && Object.keys(viewingTemplate.customFields).length > 0 && (
+              {viewingTemplate.customFields &&
+                Object.entries(viewingTemplate.customFields).some(([key]) => !key.startsWith("_system")) && (
                 <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
                   <h3 className="text-sm font-semibold text-gray-400 mb-3">Custom Fields</h3>
                   <div className="grid grid-cols-2 gap-3">
-                    {Object.entries(viewingTemplate.customFields).map(([key, value]) => (
-                      <div key={key}>
-                        <p className="text-xs text-gray-500 capitalize">{key.replace(/_/g, ' ')}</p>
-                        <p className="text-white font-medium">{value || 'N/A'}</p>
-                      </div>
-                    ))}
+                    {Object.entries(viewingTemplate.customFields)
+                      .filter(([key]) => !key.startsWith("_system"))
+                      .map(([key, value]) => (
+                        <div key={key}>
+                          <p className="text-xs text-gray-500 capitalize">{key.replace(/_/g, ' ')}</p>
+                          <p className="text-white font-medium">{value || 'N/A'}</p>
+                        </div>
+                      ))}
                   </div>
                 </div>
               )}

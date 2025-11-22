@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, memo } from "react";
+import { useState, useEffect, useMemo, memo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { FaDollarSign, FaClock, FaFileInvoice, FaChartLine, FaPlus } from "react-icons/fa";
 import { TrendingUp, TrendingDown } from "lucide-react";
@@ -9,6 +9,8 @@ import RecentActivity from "./RecentActivity";
 import RecurringEmailsCard from "./RecurringEmailsCard";
 import { usePaymentManagement } from "../context/PaymentContext";
 import { API_BASE_URL } from '../config/api';
+import toast from 'react-hot-toast';
+import { BANK_REGION_CONFIG, detectBankRegion } from '../constants/bankRegions';
 
 export default function InvoicesDashboard() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -21,6 +23,55 @@ export default function InvoicesDashboard() {
     const [currentPage, setCurrentPage] = useState(1);
     const [refreshKey, setRefreshKey] = useState(0);
     const { paymentManagementEnabled } = usePaymentManagement();
+    const [setupData, setSetupData] = useState({
+        loading: true,
+        emailMissing: false,
+        bankMissing: false,
+        emailSettings: {},
+        bankDetails: {},
+    });
+    const [setupModalOpen, setSetupModalOpen] = useState(false);
+    const [setupSnoozed, setSetupSnoozed] = useState(false);
+
+    const evaluateBankDetails = useCallback((details = {}) => {
+        if (!details) return true;
+        const hasGeneral = Boolean((details.bankName && details.accountName) || details.accountHolderName);
+        const hasEU = Boolean(details.iban && details.bic);
+        const hasUK = Boolean(details.sortCode && details.accountNumber);
+        const hasUS = Boolean(details.routingNumber && details.accountNumber);
+        return !(hasGeneral && (hasEU || hasUK || hasUS));
+    }, []);
+
+    const refreshSetupStatus = useCallback(async () => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
+            const [emailRes, profileRes] = await Promise.all([
+                fetch(`${API_BASE_URL}/api/email-settings`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                }),
+                fetch(`${API_BASE_URL}/api/user/profile`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                }),
+            ]);
+
+            const emailSettings = emailRes.ok ? await emailRes.json() : {};
+            const profile = profileRes.ok ? await profileRes.json() : {};
+            const emailMissing = !emailSettings?.email || !emailSettings?.appPassword;
+            const bankMissing = evaluateBankDetails(profile);
+
+            setSetupData({
+                loading: false,
+                emailMissing,
+                bankMissing,
+                emailSettings,
+                bankDetails: profile,
+            });
+        } catch (error) {
+            console.error("Failed to load setup status:", error);
+            setSetupData((prev) => ({ ...prev, loading: false }));
+        }
+    }, [evaluateBankDetails]);
 
     // Helper functions to manage new invoice modal URL state
     const openNewInvoiceModal = () => {
@@ -47,8 +98,31 @@ export default function InvoicesDashboard() {
         setUser({ name: "User" });
       }
     }, [navigate]);
+
+    useEffect(() => {
+        refreshSetupStatus();
+    }, [refreshSetupStatus]);
+
+    useEffect(() => {
+        if (!setupData.loading) {
+            const needsAttention = setupData.emailMissing || setupData.bankMissing;
+            setSetupModalOpen(needsAttention && !setupSnoozed);
+        }
+    }, [setupData.loading, setupData.emailMissing, setupData.bankMissing, setupSnoozed]);
+
+    useEffect(() => {
+        if (!setupData.emailMissing && !setupData.bankMissing) {
+            setSetupSnoozed(false);
+        }
+    }, [setupData.emailMissing, setupData.bankMissing]);
+
+    useEffect(() => {
+        const handler = () => openNewInvoiceModal();
+        window.addEventListener("open-new-invoice-modal", handler);
+        return () => window.removeEventListener("open-new-invoice-modal", handler);
+    }, []);
   
-    // âœ… Fetch Invoices from Backend
+    // ✅ Fetch Invoices from Backend
     useEffect(() => {
         const fetchInvoices = async () => {
             try {
@@ -74,7 +148,7 @@ export default function InvoicesDashboard() {
         fetchInvoices();
     }, [refreshKey]);
 
-    // âœ… Memoized invoice stats for performance
+    // ✅ Memoized invoice stats for performance
     const invoiceStats = useMemo(() => {
         // Filter to only include original invoices (not auto-generated recurring invoices)
         const originalInvoices = invoices.filter(inv => !inv.parentInvoiceId);
@@ -203,9 +277,304 @@ export default function InvoicesDashboard() {
   
             {/*  New Invoice Modal */}
             <NewInvoiceModal isOpen={isModalOpen} onClose={closeNewInvoiceModal} setRefreshKey={setRefreshKey}/>
+
+            <SetupAssistantModal
+                isOpen={setupModalOpen}
+                emailMissing={setupData.emailMissing}
+                bankMissing={setupData.bankMissing}
+                emailDefaults={setupData.emailSettings}
+                bankDefaults={setupData.bankDetails}
+                onDismiss={() => setSetupSnoozed(true)}
+                onEmailSaved={refreshSetupStatus}
+                onBankSaved={refreshSetupStatus}
+            />
         </div>
     );
 }
+
+const SetupAssistantModal = ({
+    isOpen,
+    emailMissing,
+    bankMissing,
+    emailDefaults = {},
+    bankDefaults = {},
+    onDismiss,
+    onEmailSaved,
+    onBankSaved
+}) => {
+    const [emailForm, setEmailForm] = useState({
+        email: emailDefaults.email || "",
+        appPassword: emailDefaults.appPassword || ""
+    });
+    const [emailSaving, setEmailSaving] = useState(false);
+    const [bankForm, setBankForm] = useState({
+        bankName: bankDefaults.bankName || "",
+        accountName: bankDefaults.accountName || "",
+        accountHolderName: bankDefaults.accountHolderName || "",
+        accountNumber: bankDefaults.accountNumber || "",
+        iban: bankDefaults.iban || "",
+        bic: bankDefaults.bic || "",
+        sortCode: bankDefaults.sortCode || "",
+        swiftCode: bankDefaults.swiftCode || "",
+        routingNumber: bankDefaults.routingNumber || "",
+        bankAddress: bankDefaults.bankAddress || "",
+    });
+    const [bankRegion, setBankRegion] = useState(detectBankRegion(bankDefaults));
+    const [bankSaving, setBankSaving] = useState(false);
+
+    useEffect(() => {
+        setEmailForm({
+            email: emailDefaults.email || "",
+            appPassword: emailDefaults.appPassword || ""
+        });
+    }, [emailDefaults]);
+
+    useEffect(() => {
+        setBankForm({
+            bankName: bankDefaults.bankName || "",
+            accountName: bankDefaults.accountName || "",
+            accountHolderName: bankDefaults.accountHolderName || "",
+            accountNumber: bankDefaults.accountNumber || "",
+            iban: bankDefaults.iban || "",
+            bic: bankDefaults.bic || "",
+            sortCode: bankDefaults.sortCode || "",
+            swiftCode: bankDefaults.swiftCode || "",
+            routingNumber: bankDefaults.routingNumber || "",
+            bankAddress: bankDefaults.bankAddress || "",
+        });
+        setBankRegion(detectBankRegion(bankDefaults));
+    }, [bankDefaults]);
+
+    if (!isOpen || (!emailMissing && !bankMissing)) {
+        return null;
+    }
+
+    const regionConfig = BANK_REGION_CONFIG[bankRegion] || BANK_REGION_CONFIG.eu;
+    const emailFormValid = emailForm.email && emailForm.appPassword;
+    const bankRegionValid = regionConfig.fields.every((field) => bankForm[field.name]);
+    const bankGeneralValid = bankForm.bankName && bankForm.accountName;
+    const bankFormValid = bankGeneralValid && bankRegionValid;
+
+    const handleEmailSave = async (e) => {
+        e.preventDefault();
+        if (!emailFormValid) return;
+        setEmailSaving(true);
+        try {
+            const token = localStorage.getItem("token");
+            const response = await fetch(`${API_BASE_URL}/api/email-settings`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(emailForm),
+            });
+
+            if (response.ok) {
+                toast.success("Email settings saved");
+                onEmailSaved?.();
+            } else {
+                const data = await response.json().catch(() => null);
+                toast.error(data?.error || "Failed to save email settings");
+            }
+        } catch (error) {
+            toast.error("Failed to save email settings");
+            console.error(error);
+        } finally {
+            setEmailSaving(false);
+        }
+    };
+
+    const handleBankSave = async (e) => {
+        e.preventDefault();
+        if (!bankFormValid) return;
+        setBankSaving(true);
+        try {
+            const token = localStorage.getItem("token");
+            const response = await fetch(`${API_BASE_URL}/api/user/profile`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(bankForm),
+            });
+
+            if (response.ok) {
+                toast.success("Bank details saved");
+                onBankSaved?.();
+            } else {
+                const data = await response.json().catch(() => null);
+                toast.error(data?.message || "Failed to save bank details");
+            }
+        } catch (error) {
+            toast.error("Failed to save bank details");
+            console.error(error);
+        } finally {
+            setBankSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8">
+            <div className="w-full max-w-3xl bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
+                <div className="flex items-start justify-between p-6 border-b border-gray-800">
+                    <div>
+                        <p className="text-sm uppercase text-blue-400 font-semibold tracking-wider">Finish setup</p>
+                        <h2 className="text-2xl font-bold text-white mt-1">You're almost ready to send invoices</h2>
+                        <p className="text-gray-400 text-sm mt-1">
+                            Add the required details below to enable email delivery and professional payment info.
+                        </p>
+                    </div>
+                    <button
+                        onClick={onDismiss}
+                        className="text-gray-400 hover:text-white text-sm border border-gray-700 rounded-full px-3 py-1"
+                    >
+                        Remind me later
+                    </button>
+                </div>
+
+                <div className="p-6 space-y-6">
+                    {emailMissing && (
+                        <form onSubmit={handleEmailSave} className="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-white">Email Delivery Settings</h3>
+                                    <p className="text-sm text-gray-400">Provide the email address and app password used to send invoices.</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Email Address</label>
+                                    <input
+                                        type="email"
+                                        value={emailForm.email}
+                                        onChange={(e) => setEmailForm({ ...emailForm, email: e.target.value })}
+                                        placeholder="you@business.com"
+                                        className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">App Password</label>
+                                    <input
+                                        type="password"
+                                        value={emailForm.appPassword}
+                                        onChange={(e) => setEmailForm({ ...emailForm, appPassword: e.target.value })}
+                                        placeholder="App specific password"
+                                        className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex justify-end">
+                                <button
+                                    type="submit"
+                                    disabled={!emailFormValid || emailSaving}
+                                    className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold disabled:opacity-50"
+                                >
+                                    {emailSaving ? "Saving..." : "Save Email Settings"}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+
+                    {bankMissing && (
+                        <form onSubmit={handleBankSave} className="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-white">Bank Details</h3>
+                                    <p className="text-sm text-gray-400">Share payment details that will appear on your invoices.</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Region</label>
+                                    <select
+                                        value={bankRegion}
+                                        onChange={(e) => setBankRegion(e.target.value)}
+                                        className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        {Object.values(BANK_REGION_CONFIG).map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="bg-gray-900/60 border border-dashed border-gray-700 rounded-lg p-4 text-sm text-gray-400">
+                                    {regionConfig.description}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {regionConfig.fields.map((field) => (
+                                    <div key={field.name}>
+                                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                                            {field.label}
+                                        </label>
+                                        <input
+                                            type="text"
+                                            name={field.name}
+                                            value={bankForm[field.name] || ""}
+                                            onChange={(e) => setBankForm({ ...bankForm, [field.name]: e.target.value })}
+                                            placeholder={field.placeholder}
+                                            className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Bank Name</label>
+                                    <input
+                                        type="text"
+                                        name="bankName"
+                                        value={bankForm.bankName}
+                                        onChange={(e) => setBankForm({ ...bankForm, bankName: e.target.value })}
+                                        placeholder="Bank name"
+                                        className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Account Name</label>
+                                    <input
+                                        type="text"
+                                        name="accountName"
+                                        value={bankForm.accountName}
+                                        onChange={(e) => setBankForm({ ...bankForm, accountName: e.target.value })}
+                                        placeholder="Business account name"
+                                        className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">Bank Address</label>
+                                    <textarea
+                                        name="bankAddress"
+                                        value={bankForm.bankAddress}
+                                        onChange={(e) => setBankForm({ ...bankForm, bankAddress: e.target.value })}
+                                        placeholder="Street, city, country"
+                                        rows={3}
+                                        className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                    ></textarea>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end">
+                                <button
+                                    type="submit"
+                                    disabled={!bankFormValid || bankSaving}
+                                    className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold disabled:opacity-50"
+                                >
+                                    {bankSaving ? "Saving..." : "Save Bank Details"}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // Reusable Dashboard Card Component (Memoized for performance)
 const DashboardCard = memo(({ title, amount, percentage, percentageColor, trendIcon, icon, bgGradient, borderColor, hoverBorderColor }) => {
