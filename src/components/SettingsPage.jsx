@@ -7,6 +7,7 @@ import CustomFieldsSettings from "./CustomFieldsSettings";
 import { Eye, EyeOff, Mail, CreditCard, DollarSign, Key, Lock, Shield, ArrowLeft, Home, Plug, FileText, Building2, Settings } from "lucide-react"; 
 import { usePaymentManagement } from "../context/PaymentContext";
 import { API_BASE_URL } from '../config/api';
+import { EMAIL_DELIVERY_OPTIONS, DEFAULT_EMAIL_DELIVERY_METHOD } from "../constants/emailDeliveryOptions";
 
 export default function SettingsPage({ initialTab = "email", hideTabs = false }) {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export default function SettingsPage({ initialTab = "email", hideTabs = false })
   const [paypalSecret, setPaypalSecret] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [stripeSecretKey, setStripeSecretKey] = useState("");
+  const [deliveryMethod, setDeliveryMethod] = useState(DEFAULT_EMAIL_DELIVERY_METHOD);
   const { paymentManagementEnabled } = usePaymentManagement();
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export default function SettingsPage({ initialTab = "email", hideTabs = false })
           const settings = await response.json();
           setEmail(settings.email || "");
           setAppPassword(settings.appPassword || "");
+          setDeliveryMethod(settings.deliveryMethod || DEFAULT_EMAIL_DELIVERY_METHOD);
           setPaypalClientId(settings.paypalClientId || "");
           setPaypalSecret(settings.paypalSecret || "");
           setStripeSecretKey(settings.stripeSecretKey || "");
@@ -99,30 +102,41 @@ export default function SettingsPage({ initialTab = "email", hideTabs = false })
         {/* Modern Tab Navigation */}
         {!hideTabs && (
           <div className="mb-8">
-            <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-2">
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`
-                      relative px-4 py-3 rounded-xl font-medium text-sm transition-all duration-300 transform hover:scale-105
-                      ${
-                        activeTab === tab.id
-                          ? "bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg shadow-blue-500/30"
-                          : "text-gray-400 hover:text-white hover:bg-gray-700/50"
-                      }
-                    `}
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                      <tab.icon size={24} className="shrink-0" />
-                      <span className="text-xs font-semibold tracking-wide">{tab.label}</span>
-                    </div>
-                    {activeTab === tab.id && (
-                      <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-blue-400/20 to-purple-500/20 animate-pulse"></div>
-                    )}
-                  </button>
-                ))}
+            <div className="bg-gray-900/60 backdrop-blur-sm border border-gray-800 rounded-2xl p-3 shadow-inner shadow-black/30">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {tabs.map((tab) => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`
+                        relative flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-300 text-left
+                        ${
+                          isActive
+                            ? "bg-gradient-to-r from-blue-500/90 to-purple-600/90 text-white border-transparent shadow-lg shadow-blue-500/30"
+                            : "bg-gray-800/70 border-gray-700 text-gray-300 hover:text-white hover:border-gray-500"
+                        }
+                      `}
+                    >
+                      <div
+                        className={`
+                          flex h-10 w-10 items-center justify-center rounded-lg border
+                          ${isActive ? "border-white/40 bg-white/10" : "border-gray-600 bg-gray-800/50"}
+                        `}
+                      >
+                        <tab.icon size={20} className={isActive ? "text-white" : "text-gray-400"} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold tracking-wide">{tab.label}</span>
+                        {!isActive && <span className="text-xs text-gray-500">Tap to manage</span>}
+                      </div>
+                      {isActive && (
+                        <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-400/10 to-purple-500/10 pointer-events-none"></div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -136,6 +150,8 @@ export default function SettingsPage({ initialTab = "email", hideTabs = false })
               setEmail={setEmail}
               appPassword={appPassword}
               setAppPassword={setAppPassword}
+              deliveryMethod={deliveryMethod}
+              setDeliveryMethod={setDeliveryMethod}
               paypalClientId={paypalClientId}
               setPaypalClientId={setPaypalClientId}
               paypalSecret={paypalSecret}
@@ -206,6 +222,8 @@ function EmailSettings({
   setEmail,
   appPassword,
   setAppPassword,
+  deliveryMethod,
+  setDeliveryMethod,
   paypalClientId,
   setPaypalClientId,
   paypalSecret,
@@ -217,8 +235,17 @@ function EmailSettings({
   paymentManagementEnabled
 }) {
   const [saveStatus, setSaveStatus] = useState({ type: '', message: '' });
+  const isDefaultDelivery = deliveryMethod === "default";
+  const saveEmailDisabled = !isDefaultDelivery && (!email || !appPassword);
+  const emailSaveButtonText = isDefaultDelivery ? "Use InvoiceGen Delivery" : "Save Email Settings";
 
   const handleSaveEmail = async () => {
+    if (deliveryMethod === "custom" && (!email || !appPassword)) {
+      setSaveStatus({ type: 'error', message: 'Enter your email and app password to use your own sender.' });
+      setTimeout(() => setSaveStatus({ type: '', message: '' }), 3000);
+      return;
+    }
+
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(`${API_BASE_URL}/api/email-settings`, {
@@ -227,7 +254,7 @@ function EmailSettings({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ email, appPassword }),
+        body: JSON.stringify({ email, appPassword, deliveryMethod }),
       });
       if (response.ok) {
         setSaveStatus({ type: 'success', message: 'Email settings saved successfully!' });
@@ -310,10 +337,41 @@ function EmailSettings({
       {/* Email Configuration */}
       <SettingsCard 
         title="Email Configuration" 
-        description="Configure SMTP settings for sending invoices via email"
+        description="Choose your delivery method and configure credentials when needed"
         icon={<Mail className="text-blue-400" size={24} />}
         iconBg="bg-blue-500/20"
       >
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {EMAIL_DELIVERY_OPTIONS.map((option) => {
+              const selected = deliveryMethod === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setDeliveryMethod(option.value)}
+                  className={`text-left p-4 rounded-xl border transition-all duration-200 ${
+                    selected ? "border-blue-500 bg-blue-600/10 shadow-lg shadow-blue-500/20" : "border-gray-700 hover:border-gray-500"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-white font-semibold">{option.title}</p>
+                      <p className="text-sm text-gray-400 mt-1">{option.description}</p>
+                    </div>
+                    {selected && (
+                      <span className="text-xs font-semibold text-blue-200 border border-blue-400 rounded-full px-3 py-1">
+                        Selected
+                      </span>
+                    )}
+                  </div>
+                  <span className="inline-flex mt-3 text-xs font-medium text-gray-300 bg-gray-900/60 border border-gray-700 rounded-full px-3 py-1">
+                    {option.badge}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <SettingsInput 
             label="Email Address" 
@@ -322,6 +380,7 @@ function EmailSettings({
             onChange={(e) => setEmail(e.target.value)}
             placeholder="your-email@example.com"
             icon={<Mail size={18} />}
+            disabled={isDefaultDelivery}
           />
           <SettingsInput 
             label="App Password" 
@@ -330,9 +389,16 @@ function EmailSettings({
             onChange={(e) => setAppPassword(e.target.value)}
             placeholder="Enter app-specific password"
             icon={<Key size={18} />}
+            disabled={isDefaultDelivery}
           />
         </div>
-        <SaveButton text="Save Email Settings" onClick={handleSaveEmail} color="blue" />
+        {isDefaultDelivery && (
+          <div className="text-xs text-gray-400 bg-gray-900/60 border border-dashed border-gray-700 rounded-lg px-4 py-3">
+            No credentials required. Your business email is automatically CC'd and used as the reply-to address when InvoiceGen sends invoices for you.
+          </div>
+        )}
+        <SaveButton text={emailSaveButtonText} onClick={handleSaveEmail} color="blue" disabled={saveEmailDisabled && !isDefaultDelivery} />
+        </div>
       </SettingsCard>
 
       {/* PayPal Integration - Only show if payment management is enabled */}
@@ -418,7 +484,7 @@ function SettingsCard({ title, description, icon, iconBg, children }) {
   );
 }
 
-function SettingsInput({ label, type = "text", value, onChange, placeholder, icon }) {
+function SettingsInput({ label, type = "text", value, onChange, placeholder, icon, disabled = false }) {
     const [showPassword, setShowPassword] = useState(false);
     const isPasswordField = type === "password";
   
@@ -436,13 +502,15 @@ function SettingsInput({ label, type = "text", value, onChange, placeholder, ico
             value={value}
             onChange={onChange}
             placeholder={placeholder}
-            className={`w-full ${icon ? 'pl-10' : 'pl-4'} pr-10 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200`}
+            disabled={disabled}
+            className={`w-full ${icon ? 'pl-10' : 'pl-4'} pr-10 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
           />
           {isPasswordField && (
             <button
               type="button"
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-200"
-              onClick={() => setShowPassword(!showPassword)}
+              className={`absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 ${disabled ? 'cursor-not-allowed' : 'hover:text-white transition-colors duration-200'}`}
+              onClick={() => !disabled && setShowPassword(!showPassword)}
+              disabled={disabled}
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
@@ -452,7 +520,7 @@ function SettingsInput({ label, type = "text", value, onChange, placeholder, ico
     );
   }
 
-function SaveButton({ text, onClick, color = 'blue' }) {
+function SaveButton({ text, onClick, color = 'blue', disabled = false }) {
   const colorClasses = {
     blue: 'from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 focus:ring-blue-500',
     yellow: 'from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 focus:ring-yellow-500',
@@ -462,7 +530,9 @@ function SaveButton({ text, onClick, color = 'blue' }) {
   return (
     <button
       onClick={onClick}
-      className={`px-6 py-3 bg-gradient-to-r ${colorClasses[color]} text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800`}
+      type="button"
+      disabled={disabled}
+      className={`px-6 py-3 bg-gradient-to-r ${colorClasses[color]} text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}`}
     >
       {text}
     </button>

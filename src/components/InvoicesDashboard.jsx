@@ -11,6 +11,7 @@ import { usePaymentManagement } from "../context/PaymentContext";
 import { API_BASE_URL } from '../config/api';
 import toast from 'react-hot-toast';
 import { BANK_REGION_CONFIG, detectBankRegion } from '../constants/bankRegions';
+import { EMAIL_DELIVERY_OPTIONS, DEFAULT_EMAIL_DELIVERY_METHOD } from "../constants/emailDeliveryOptions";
 
 export default function InvoicesDashboard() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -55,16 +56,24 @@ export default function InvoicesDashboard() {
                 }),
             ]);
 
-            const emailSettings = emailRes.ok ? await emailRes.json() : {};
+            let emailSettings = {};
+            if (emailRes.ok) {
+                emailSettings = await emailRes.json();
+            }
             const profile = profileRes.ok ? await profileRes.json() : {};
-            const emailMissing = !emailSettings?.email || !emailSettings?.appPassword;
+            const hasEmailSettings = emailSettings && Object.keys(emailSettings).length > 0;
+            const deliveryMethod = emailSettings?.deliveryMethod === "default" ? "default" : DEFAULT_EMAIL_DELIVERY_METHOD;
+            const emailMissing = !hasEmailSettings || (deliveryMethod === "custom" && (!emailSettings?.email || !emailSettings?.appPassword));
+            const normalizedEmailSettings = hasEmailSettings
+                ? { ...emailSettings, deliveryMethod }
+                : { deliveryMethod };
             const bankMissing = evaluateBankDetails(profile);
 
             setSetupData({
                 loading: false,
                 emailMissing,
                 bankMissing,
-                emailSettings,
+                emailSettings: normalizedEmailSettings,
                 bankDetails: profile,
             });
         } catch (error) {
@@ -304,7 +313,8 @@ const SetupAssistantModal = ({
 }) => {
     const [emailForm, setEmailForm] = useState({
         email: emailDefaults.email || "",
-        appPassword: emailDefaults.appPassword || ""
+        appPassword: emailDefaults.appPassword || "",
+        deliveryMethod: emailDefaults.deliveryMethod || DEFAULT_EMAIL_DELIVERY_METHOD,
     });
     const [emailSaving, setEmailSaving] = useState(false);
     const [bankForm, setBankForm] = useState({
@@ -325,7 +335,8 @@ const SetupAssistantModal = ({
     useEffect(() => {
         setEmailForm({
             email: emailDefaults.email || "",
-            appPassword: emailDefaults.appPassword || ""
+            appPassword: emailDefaults.appPassword || "",
+            deliveryMethod: emailDefaults.deliveryMethod || DEFAULT_EMAIL_DELIVERY_METHOD,
         });
     }, [emailDefaults]);
 
@@ -350,7 +361,8 @@ const SetupAssistantModal = ({
     }
 
     const regionConfig = BANK_REGION_CONFIG[bankRegion] || BANK_REGION_CONFIG.eu;
-    const emailFormValid = emailForm.email && emailForm.appPassword;
+    const isDefaultDelivery = emailForm.deliveryMethod === "default";
+    const emailFormValid = isDefaultDelivery || (emailForm.email && emailForm.appPassword);
     const bankRegionValid = regionConfig.fields.every((field) => bankForm[field.name]);
     const bankGeneralValid = bankForm.bankName && bankForm.accountName;
     const bankFormValid = bankGeneralValid && bankRegionValid;
@@ -440,7 +452,43 @@ const SetupAssistantModal = ({
                             <div className="flex items-center justify-between">
                                 <div>
                                     <h3 className="text-lg font-semibold text-white">Email Delivery Settings</h3>
-                                    <p className="text-sm text-gray-400">Provide the email address and app password used to send invoices.</p>
+                                    <p className="text-sm text-gray-400">
+                                        Choose how you want your invoices to be delivered. Use your own business email with an app password or let InvoiceGen send emails from our secure delivery address. When the default option is selected we CC your business email and set it as the reply-to so vendors can respond directly to you.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {EMAIL_DELIVERY_OPTIONS.map((option) => {
+                                        const selected = emailForm.deliveryMethod === option.value;
+                                        return (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => setEmailForm((prev) => ({ ...prev, deliveryMethod: option.value }))}
+                                                className={`text-left p-4 rounded-xl border transition-all duration-200 ${
+                                                    selected
+                                                        ? "border-blue-500 bg-blue-600/10 shadow-lg shadow-blue-500/20"
+                                                        : "border-gray-700 hover:border-gray-500"
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-white font-semibold">{option.title}</p>
+                                                        <p className="text-sm text-gray-400 mt-1">{option.description}</p>
+                                                    </div>
+                                                    {selected && (
+                                                        <span className="text-xs font-semibold text-blue-200 border border-blue-400 rounded-full px-3 py-1">
+                                                            Selected
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <span className="inline-flex mt-3 text-xs font-medium text-gray-300 bg-gray-900/60 border border-gray-700 rounded-full px-3 py-1">
+                                                    {option.badge}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 gap-4">
@@ -451,7 +499,8 @@ const SetupAssistantModal = ({
                                         value={emailForm.email}
                                         onChange={(e) => setEmailForm({ ...emailForm, email: e.target.value })}
                                         placeholder="you@business.com"
-                                        className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        disabled={isDefaultDelivery}
+                                        className={`w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDefaultDelivery ? "opacity-50 cursor-not-allowed" : ""}`}
                                     />
                                 </div>
                                 <div>
@@ -461,17 +510,23 @@ const SetupAssistantModal = ({
                                         value={emailForm.appPassword}
                                         onChange={(e) => setEmailForm({ ...emailForm, appPassword: e.target.value })}
                                         placeholder="App specific password"
-                                        className="w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        disabled={isDefaultDelivery}
+                                        className={`w-full px-4 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDefaultDelivery ? "opacity-50 cursor-not-allowed" : ""}`}
                                     />
                                 </div>
                             </div>
+                            {isDefaultDelivery && (
+                                <div className="text-xs text-gray-400 bg-gray-900/60 border border-dashed border-gray-700 rounded-lg px-4 py-3">
+                                    No email credentials are required when InvoiceGen handles delivery. We keep any saved details so you can switch back to your own email whenever you like.
+                                </div>
+                            )}
                             <div className="flex justify-end">
                                 <button
                                     type="submit"
                                     disabled={!emailFormValid || emailSaving}
                                     className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold disabled:opacity-50"
                                 >
-                                    {emailSaving ? "Saving..." : "Save Email Settings"}
+                                    {emailSaving ? "Saving..." : isDefaultDelivery ? "Use InvoiceGen Delivery" : "Save Email Settings"}
                                 </button>
                             </div>
                         </form>
@@ -633,4 +688,3 @@ const SkeletonCard = memo(() => {
 });
 
 SkeletonCard.displayName = 'SkeletonCard';
-

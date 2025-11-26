@@ -135,19 +135,8 @@ export default function Navbar() {
                     </div>
                   )}
                   <ul className="py-1">
-                    <li>
-                      <Link
-                        to="/dashboard/settings"
-                        className="flex items-center px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors duration-150"
-                        onClick={() => setIsDropdownOpen(false)}
-                      >
-                        <FaCog className="w-4 h-4 mr-3" />
-                        Settings
-                      </Link>
-                    </li>
-                    
                     {/* Payment Management Toggle */}
-                    <li className="px-4 py-2.5 border-t border-gray-700">
+                    <li className="px-4 py-2.5 ">
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-300">Payment Mode</span>
                         <button
