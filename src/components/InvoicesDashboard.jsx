@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, memo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FaDollarSign, FaClock, FaFileInvoice, FaChartLine, FaPlus } from "react-icons/fa";
+import { FaDollarSign, FaClock, FaFileInvoice, FaChartLine, FaPlus, FaFileSignature } from "react-icons/fa";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import NewInvoiceModal from "./NewInvoiceModal";
 import { useNavigate } from "react-router-dom";
@@ -17,6 +17,9 @@ export default function InvoicesDashboard() {
     const [searchParams, setSearchParams] = useSearchParams();
     const [user, setUser] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(searchParams.get('newInvoice') === 'true');
+    const [initialDocumentType, setInitialDocumentType] = useState(
+        searchParams.get('docType') === 'quote' ? 'quote' : 'invoice'
+    );
     const [invoices, setInvoices] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const navigate = useNavigate();
@@ -33,6 +36,9 @@ export default function InvoicesDashboard() {
     });
     const [setupModalOpen, setSetupModalOpen] = useState(false);
     const [setupSnoozed, setSetupSnoozed] = useState(false);
+    const statsGridClasses = paymentManagementEnabled
+        ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8"
+        : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 max-w-3xl gap-4 sm:gap-6 mb-8";
 
     const evaluateBankDetails = useCallback((details = {}) => {
         if (!details) return true;
@@ -82,10 +88,11 @@ export default function InvoicesDashboard() {
         }
     }, [evaluateBankDetails]);
 
-    // Helper functions to manage new invoice modal URL state
-    const openNewInvoiceModal = () => {
+    // Helper functions to manage new document modal URL state
+    const openNewInvoiceModal = (docType = "invoice") => {
+        setInitialDocumentType(docType);
         setIsModalOpen(true);
-        setSearchParams({ newInvoice: 'true' });
+        setSearchParams({ newInvoice: 'true', docType });
     };
 
     const closeNewInvoiceModal = () => {
@@ -159,8 +166,8 @@ export default function InvoicesDashboard() {
 
     // ✅ Memoized invoice stats for performance
     const invoiceStats = useMemo(() => {
-        // Filter to only include original invoices (not auto-generated recurring invoices)
-        const originalInvoices = invoices.filter(inv => !inv.parentInvoiceId);
+        const invoiceDocuments = invoices.filter(inv => (inv.documentType || "invoice") !== "quote");
+        const originalInvoices = invoiceDocuments.filter(inv => !inv.parentInvoiceId);
         
         const total = originalInvoices.length || 0;
         const paid = originalInvoices
@@ -170,8 +177,12 @@ export default function InvoicesDashboard() {
             .filter((invoice) => invoice.status?.toLowerCase() === "pending")
             .reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0) || 0;
         const totalRevenue = originalInvoices.reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0) || 0;
+        const quotes = invoices.filter(inv => (inv.documentType || "invoice") === "quote");
+        const openQuotes = quotes.filter(
+            q => !["accepted", "declined", "converted"].includes((q.status || "").toLowerCase())
+        );
 
-        return { total, paid, pending, totalRevenue };
+        return { total, paid, pending, totalRevenue, quotes: quotes.length, openQuotes: openQuotes.length };
     }, [invoices]);
 
     return (
@@ -186,25 +197,34 @@ export default function InvoicesDashboard() {
                             Here's what's happening with your invoices today
                         </p>
                     </div>
-                    <button
-                        onClick={openNewInvoiceModal}
-                        className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg shadow-purple-500/30 transition-all duration-300 transform hover:scale-105 active:scale-95"
-                    >
-                        <FaPlus className="text-lg" />
-                        <span>New Invoice</span>
-                    </button>
+                    <div className="flex flex-wrap gap-3">
+                        <button
+                            onClick={() => openNewInvoiceModal("quote")}
+                            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gray-800/80 border border-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700/80 transition-all duration-200"
+                        >
+                            <FaFileSignature className="text-base" />
+                            <span>New Quote</span>
+                        </button>
+                        <button
+                            onClick={() => openNewInvoiceModal("invoice")}
+                            className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg shadow-purple-500/30 transition-all duration-300 transform hover:scale-105 active:scale-95"
+                        >
+                            <FaPlus className="text-lg" />
+                            <span>New Invoice</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {/* Stats Cards */}
             {isLoading ? (
-                <div className={`grid grid-cols-1 ${paymentManagementEnabled ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-1 lg:grid-cols-1 max-w-md'} gap-4 sm:gap-6 mb-8`}>
-                    {Array.from({ length: paymentManagementEnabled ? 4 : 1 }).map((_, i) => (
+                <div className={statsGridClasses}>
+                    {Array.from({ length: paymentManagementEnabled ? 4 : 2 }).map((_, i) => (
                         <SkeletonCard key={i} />
                     ))}
                 </div>
             ) : (
-                <div className={`grid grid-cols-1 ${paymentManagementEnabled ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-1 lg:grid-cols-1 max-w-md'} gap-4 sm:gap-6 mb-8`}>
+                <div className={statsGridClasses}>
                     <DashboardCard
                         title="Total Invoices"
                         amount={invoiceStats.total}
@@ -212,6 +232,16 @@ export default function InvoicesDashboard() {
                         bgGradient="from-blue-500/10 to-blue-600/10"
                         borderColor="border-blue-500/30"
                         hoverBorderColor="hover:border-blue-500/60"
+                    />
+                    <DashboardCard
+                        title="Quotes"
+                        amount={invoiceStats.quotes}
+                        percentage={`${invoiceStats.openQuotes} open`}
+                        percentageColor="text-purple-300"
+                        icon={<FaFileSignature className="text-purple-300 text-4xl sm:text-5xl" />}
+                        bgGradient="from-purple-500/10 to-pink-500/10"
+                        borderColor="border-purple-400/40"
+                        hoverBorderColor="hover:border-purple-400/70"
                     />
                     {paymentManagementEnabled && (
                         <>
@@ -285,7 +315,12 @@ export default function InvoicesDashboard() {
             </div>
   
             {/*  New Invoice Modal */}
-            <NewInvoiceModal isOpen={isModalOpen} onClose={closeNewInvoiceModal} setRefreshKey={setRefreshKey}/>
+            <NewInvoiceModal
+                isOpen={isModalOpen}
+                onClose={closeNewInvoiceModal}
+                setRefreshKey={setRefreshKey}
+                initialDocumentType={initialDocumentType}
+            />
 
             <SetupAssistantModal
                 isOpen={setupModalOpen}

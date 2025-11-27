@@ -59,6 +59,8 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
         }
     };
 
+    const documentLabel = (invoice?.documentType || "invoice") === "quote" ? "Quote" : "Invoice";
+    const isQuote = documentLabel === "Quote";
     const isRecurringInvoice = Boolean(invoice?.isRecurring);
 
     const confirmationStorageKey = () => {
@@ -67,6 +69,9 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
     };
 
     const requiresBankConfirmation = () => {
+        if (isQuote) {
+            return false;
+        }
         if (!isRecurringInvoice) {
             return true;
         }
@@ -77,7 +82,7 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
     };
 
     const markBankDetailsConfirmed = () => {
-        if (!isRecurringInvoice) return;
+        if (!isRecurringInvoice || isQuote) return;
         const key = confirmationStorageKey();
         if (!key) return;
         localStorage.setItem(key, "confirmed");
@@ -283,7 +288,7 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
                     });
                 }
 
-                toast.success("Email sent successfully!");
+                toast.success(`${documentLabel} sent successfully!`);
                 
                 // Notify parent that invoice was sent - always trigger refresh
                 if (typeof onClose === 'function') {
@@ -545,10 +550,10 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
                     <div>
                         <h2 className="text-2xl font-bold text-white flex items-center gap-2">
                             <FaPaperPlane className="text-purple-200" />
-                            Send Invoice
+                            Send {documentLabel}
                         </h2>
                         <div className="flex items-center gap-4 mt-1 text-purple-100 text-sm">
-                            <span>Invoice #{createdInvoiceId || invoice.id || 'New'}</span>
+                            <span>{documentLabel} #{createdInvoiceId || invoice.id || 'New'}</span>
                             <span>•</span>
                             <span>{invoice.client}</span>
                         </div>
@@ -639,11 +644,11 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
                             </div>
                         </div>
 
-                        {/* Invoice PDF Section */}
+                        {/* Invoice/Quote PDF Section */}
                         <div className="bg-gray-900/50 p-4 rounded-xl border border-gray-700">
                             <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                                 <FaFileAlt className="text-green-400" />
-                                Invoice PDF Attachment
+                                {documentLabel} PDF Attachment
                                 <span className="text-xs text-gray-500 font-normal ml-2">(Optional)</span>
                             </h3>
                             
@@ -752,7 +757,7 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
                         ) : (
                             <>
                                 <FaPaperPlane />
-                                Send Email
+                                {isQuote ? "Send Quote" : "Send Invoice"}
                             </>
                         )}
                     </button>
@@ -799,17 +804,19 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
                     }
                 `}</style>
 
-                <BankDetailsConfirmationModal
-                    isOpen={confirmBankModalOpen}
-                    onConfirm={handleConfirmBankDetails}
-                    onCancel={handleCancelBankConfirmation}
-                    confirmText="Looks Good – Send Invoice"
-                    infoMessage={
-                        isRecurringInvoice
-                            ? "Recurring invoices will continue using these bank details automatically after this confirmation."
-                            : "Manual sends always show this reminder. For recurring invoices, you only confirm once; we remember it for automated emails."
-                    }
-                />
+                {!isQuote && (
+                    <BankDetailsConfirmationModal
+                        isOpen={confirmBankModalOpen}
+                        onConfirm={handleConfirmBankDetails}
+                        onCancel={handleCancelBankConfirmation}
+                        confirmText={`Looks Good - Send ${documentLabel}`}
+                        infoMessage={
+                            isRecurringInvoice
+                                ? "Recurring invoices will continue using these bank details automatically after this confirmation."
+                                : "Manual sends always show this reminder. For recurring invoices, you only confirm once; we remember it for automated emails."
+                        }
+                    />
+                )}
 
                 {/* Template Selection Modal */}
                 {isTemplateModalOpen && (

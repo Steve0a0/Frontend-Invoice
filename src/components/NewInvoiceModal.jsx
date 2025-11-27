@@ -54,7 +54,7 @@ const remapTaskForStructure = (task, structure) => {
   return normalizedTask;
 };
 
-export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
+export default function NewInvoiceModal({ isOpen, onClose, setRefreshKey, initialDocumentType = "invoice" }) {
   const [formData, setFormData] = useState({
     client: "",
     clientEmail: "",
@@ -64,6 +64,8 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
     tasks: [remapTaskForStructure({ id: 1, description: "" }, "hourly")],
     notes: "",
     customFields: {},
+    documentType: initialDocumentType,
+    validUntil: "",
   });
 
   const [userId, setUserId] = useState(null);
@@ -75,6 +77,12 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
   const { paymentManagementEnabled } = usePaymentManagement();
   const workTypes = ["Consulting", "Development", "Design"];
   const currencies = ["USD", "EUR", "GBP"];
+  const documentType = formData.documentType || "invoice";
+  const isQuote = documentType === "quote";
+  const documentLabel = isQuote ? "Quote" : "Invoice";
+  const primaryButtonGradient = isQuote
+    ? "from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700"
+    : "from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700";
 
   const applyItemStructure = (structure) => {
     setItemStructure(structure);
@@ -86,6 +94,14 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
 
   const handleItemStructureSelect = (structure) => {
     applyItemStructure(structure);
+  };
+
+  const handleDocumentTypeChange = (type) => {
+    setFormData((prev) => ({
+      ...prev,
+      documentType: type,
+      validUntil: type === "quote" ? prev.validUntil : "",
+    }));
   };
 
   const selectedStructureMeta = itemStructureOptions.find(
@@ -115,6 +131,16 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
       document.body.style.overflow = 'unset';
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormData((prev) => ({
+        ...prev,
+        documentType: initialDocumentType,
+        validUntil: initialDocumentType === "quote" ? prev.validUntil : "",
+      }));
+    }
+  }, [isOpen, initialDocumentType]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -242,6 +268,10 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
         toast.error("Please fill in all required fields.");
         return false;
     }
+    if (isQuote && !formData.validUntil) {
+        toast.error("Please select a valid until date for the quote.");
+        return false;
+    }
     if (vatEnabled && parsedVatRate <= 0) {
         toast.error("Please enter a valid VAT percentage.");
         return false;
@@ -296,6 +326,8 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
         notes: formData.notes,
         totalAmount: Number(totalWithVat.toFixed(2)),
         status: "Draft",
+        documentType,
+        validUntil: isQuote ? formData.validUntil : null,
         customFields: customFieldsWithVat,
         itemStructure: itemStructure, // Include item structure in invoice
     };
@@ -342,7 +374,7 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
     const invoice = await createInvoice(invoiceData);
     
     if (invoice) {
-        toast.success("Invoice Created!");
+        toast.success(documentLabel === "Quote" ? "Quote Created!" : "Invoice Created!");
         onClose();
     }
   };
@@ -355,17 +387,37 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
         <div className="bg-gray-800 text-white rounded-2xl shadow-2xl w-full max-w-5xl relative max-h-[95vh] overflow-hidden border border-gray-700 animate-slideUp flex flex-col">
           
           {/* Compact Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-3 flex justify-between items-center flex-shrink-0">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">Create New Invoice</h2>
-              <p className="text-blue-100 text-xs mt-0.5">Fill in the details below</p>
+          <div className={`bg-gradient-to-r ${isQuote ? "from-purple-600 to-purple-700" : "from-blue-600 to-blue-700"} px-6 py-3 flex flex-col gap-2 flex-shrink-0`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white">Create New {documentLabel}</h2>
+                <p className="text-white/90 text-xs mt-0.5">
+                  {isQuote ? "Share pricing details for approval." : "Fill in the details below to bill your client."}
+                </p>
+              </div>
+              <button 
+                onClick={onClose} 
+                className="text-white hover:bg-white/20 p-2 rounded-lg transition-all duration-200"
+              >
+                <FaTimes size={20} />
+              </button>
             </div>
-            <button 
-              onClick={onClose} 
-              className="text-white hover:bg-white/20 p-2 rounded-lg transition-all duration-200"
-            >
-              <FaTimes size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              {["invoice", "quote"].map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => handleDocumentTypeChange(type)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all duration-200 border ${
+                    documentType === type
+                      ? "bg-white/25 text-white border-white/60"
+                      : "bg-white/10 text-white/70 border-white/30 hover:bg-white/20"
+                  }`}
+                >
+                  {type === "invoice" ? "Invoice" : "Quote"}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Scrollable Content - only if tasks overflow */}
@@ -421,7 +473,7 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
 
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">
-                  Invoice Date *
+                  {documentLabel} Date *
                 </label>
                 <input 
                   type="date" 
@@ -432,6 +484,22 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
                   required 
                 />
               </div>
+
+              {isQuote && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">
+                    Valid Until *
+                  </label>
+                  <input 
+                    type="date" 
+                    name="validUntil" 
+                    value={formData.validUntil} 
+                    onChange={handleInputChange} 
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-white text-sm"
+                    required 
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">
@@ -859,9 +927,9 @@ export default function NewInvoiceModal({ isOpen, onClose,setRefreshKey  }) {
           <button 
             type="button" 
             onClick={handleSaveAsDraft}
-            className="px-6 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 text-sm"
+            className={`px-6 py-2 bg-gradient-to-r ${primaryButtonGradient} text-white font-semibold rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 text-sm`}
           >
-            Create Invoice
+            Create {documentLabel}
           </button>
         </div>
 

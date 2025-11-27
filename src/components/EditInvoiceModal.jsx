@@ -269,7 +269,8 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
                 tasks: mappedTasks,
                 totalAmount,
                 itemStructure,
-                customFields: formData.customFields
+                customFields: formData.customFields,
+                documentType: invoice.documentType || "invoice"
             };
 
 
@@ -283,7 +284,7 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
             });
 
             if (response.ok) {
-                toast.success("Invoice updated successfully!");
+                toast.success(`${documentLabel} updated successfully!`);
                 onSuccess();
                 onClose();
             } else {
@@ -300,6 +301,8 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
     };
 
     if (!isOpen || !invoice) return null;
+    const documentLabel = (invoice.documentType || "invoice") === "quote" ? "Quote" : "Invoice";
+    const isQuoteDocument = documentLabel === "Quote";
 
     return (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center p-4 z-[9999] overflow-y-auto">
@@ -309,10 +312,10 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
                 <div className="flex items-center justify-between p-6 border-b border-gray-700 bg-gray-800/50">
                     <div>
                         <h2 className="text-2xl font-bold bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
-                            Edit Invoice
+                            Edit {documentLabel}
                         </h2>
                         <p className="text-sm text-gray-400 mt-1">
-                            Invoice {invoice.invoiceNumber || `#${invoice.id.slice(0, 8)}`}
+                            {documentLabel} {invoice.invoiceNumber || `#${invoice.id.slice(0, 8)}`}
                         </p>
                     </div>
                     <button
@@ -344,8 +347,8 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-gray-300 mb-2">
-                                    Invoice Date *
+                                    <label className="block text-sm font-semibold text-gray-300 mb-2">
+                                        {documentLabel} Date *
                                 </label>
                                 <input
                                     type="date"
@@ -395,7 +398,7 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
                         {/* Status */}
                         <div>
                             <label className="block text-sm font-semibold text-gray-300 mb-2">
-                                Status
+                                {documentLabel} Status
                             </label>
                             <select
                                 name="status"
@@ -405,9 +408,20 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
                             >
                                 <option value="Draft">Draft</option>
                                 <option value="Sent">Sent</option>
-                                <option value="Pending">Pending</option>
-                                <option value="Paid">Paid</option>
-                                <option value="Overdue">Overdue</option>
+                                {!isQuoteDocument && (
+                                    <>
+                                        <option value="Pending">Pending</option>
+                                        <option value="Paid">Paid</option>
+                                        <option value="Overdue">Overdue</option>
+                                    </>
+                                )}
+                                {isQuoteDocument && (
+                                    <>
+                                        <option value="Accepted">Accepted</option>
+                                        <option value="Declined">Declined</option>
+                                        <option value="Converted">Converted</option>
+                                    </>
+                                )}
                             </select>
                         </div>
 
@@ -675,7 +689,7 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
                             <div className="flex justify-between items-center">
                                 <span className="text-lg font-semibold text-gray-300">Total Amount:</span>
                                 <span className="text-2xl font-bold text-yellow-400">
-                                    {formData.currency} {calculateTotal().toFixed(2)}
+                                    {getCurrencySymbol(formData.currency)}{calculateTotal().toFixed(2)}
                                 </span>
                             </div>
                         </div>
@@ -698,7 +712,7 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
                         disabled={isSubmitting}
                         className="px-6 py-2.5 bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700 text-white rounded-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {isSubmitting ? "Updating..." : "Update Invoice"}
+                        {isSubmitting ? "Updating..." : `Update ${documentLabel}`}
                     </button>
                 </div>
 
@@ -706,5 +720,3 @@ export default function EditInvoiceModal({ invoice, isOpen, onClose, onSuccess }
         </div>
     );
 }
-
-

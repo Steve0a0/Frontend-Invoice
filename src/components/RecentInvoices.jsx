@@ -1,6 +1,6 @@
 ﻿import { memo, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { MoreVertical, Mail, Download, AlertTriangle, Search, Edit, Trash2, Eye, Copy, RotateCw, StopCircle, X, Calendar, Clock, Infinity, Send, FileText, Zap } from "lucide-react";
+import { MoreVertical, Mail, Download, AlertTriangle, Search, Edit, Trash2, Eye, Copy, RotateCw, StopCircle, X, Calendar, Clock, Infinity, Send, FileText, Zap, BadgeCheck, XOctagon, ArrowRightCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import SendInvoiceModal from "./SendInvoiceModal"; 
 import DropdownPortal from "./DropdownPortal";
@@ -10,6 +10,22 @@ import InvoicePreviewModal from "./InvoicePreviewModal";
 import EditInvoiceModal from "./EditInvoiceModal";
 import BankDetailsConfirmationModal from "./BankDetailsConfirmationModal";
 import { API_BASE_URL } from '../config/api';
+
+const STATUS_BADGE_MAP = {
+    paid: "bg-green-500/20 text-green-400 border border-green-500/50",
+    pending: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/50",
+    overdue: "bg-red-500/20 text-red-400 border border-red-500/50",
+    draft: "bg-gray-500/20 text-gray-400 border border-gray-500/50",
+    sent: "bg-blue-500/20 text-blue-400 border border-blue-500/50",
+    accepted: "bg-purple-500/20 text-purple-300 border border-purple-400/50",
+    declined: "bg-red-600/20 text-red-300 border border-red-600/40",
+    converted: "bg-indigo-500/20 text-indigo-300 border border-indigo-400/60"
+};
+
+const getStatusBadgeClass = (status = "") => {
+    const key = status.toLowerCase();
+    return STATUS_BADGE_MAP[key] || "bg-gray-600/30 text-gray-200 border border-gray-600/60";
+};
 
 
 
@@ -21,6 +37,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
     const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState("All");
+    const [documentTypeFilter, setDocumentTypeFilter] = useState("all");
     const [searchQuery, setSearchQuery] = useState("");
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [invoiceToDelete, setInvoiceToDelete] = useState(null);
@@ -118,8 +135,14 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
     
     const dropdownRefs = useRef([]);
     const itemsPerPage = 5;
-    const filteredInvoices = invoices
+  const filteredInvoices = invoices
   .filter((inv) => !inv.parentInvoiceId) // Only show original invoices (templates), hide ALL auto-generated ones
+  .filter((inv) => {
+    if (documentTypeFilter === "all") return true;
+    if (documentTypeFilter === "invoices") return inv.documentType !== "quote";
+    if (documentTypeFilter === "quotes") return inv.documentType === "quote";
+    return true;
+  })
   .filter((inv) =>
     statusFilter === "All" || inv.status?.toLowerCase() === statusFilter.toLowerCase()
   )
@@ -309,6 +332,15 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
             case 'stopRecurring':
                 handleStopRecurring(invoice);
                 break;
+            case 'convertQuote':
+                handleConvertQuote(invoice);
+                break;
+            case 'markQuoteAccepted':
+                handleQuoteStatusChange(invoice, "Accepted");
+                break;
+            case 'markQuoteDeclined':
+                handleQuoteStatusChange(invoice, "Declined");
+                break;
             case 'delete':
                 confirmDeleteInvoice(invoice);
                 break;
@@ -357,7 +389,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
         setSelectedInvoice(invoice);
         
         // Get current time in HH:MM format (default to 9:00 AM if not set)
-        const currentTime = invoice.recurringTime || '09:00';
+            const currentTime = invoice.recurringTime || '09:00';
         
         setRecurringConfig({
             frequency: invoice.recurringFrequency || 'monthly',
@@ -420,8 +452,12 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
 
             // Apply the recurringTime if specified (for non-test frequencies)
             if (recurringConfig.recurringTime && !['every-20-seconds', 'every-minute', 'monthly-test'].includes(recurringConfig.frequency)) {
-                const [hours, minutes] = recurringConfig.recurringTime.split(': ').map(Number);
-                nextDate.setHours(hours, minutes, 0, 0);
+                const [hoursStr = '09', minutesStr = '00'] = recurringConfig.recurringTime.split(':');
+                const hours = parseInt(hoursStr, 10);
+                const minutes = parseInt(minutesStr, 10);
+                const safeHours = Number.isFinite(hours) ? hours : 9;
+                const safeMinutes = Number.isFinite(minutes) ? minutes : 0;
+                nextDate.setHours(safeHours, safeMinutes, 0, 0);
             }
 
             const response = await fetch(`${API_BASE_URL}/api/invoices/${selectedInvoice.id}`, {
@@ -520,9 +556,65 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
         }
     };
 
+    const handleQuoteStatusChange = async (invoice, nextStatus) => {
+        try {
+            const token = localStorage.getItem("token");
+            const response = await fetch(`${API_BASE_URL}/api/invoices/${invoice.id}`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ status: nextStatus }),
+            });
+
+            if (response.ok) {
+                toast.success(`Quote marked as ${nextStatus}`);
+                if (setRefreshKey) {
+                    setRefreshKey(prev => prev + 1);
+                }
+            } else {
+                const error = await response.json().catch(() => null);
+                toast.error(error?.message || "Failed to update quote status");
+            }
+        } catch (error) {
+            console.error("Error updating quote status:", error);
+            toast.error("An error occurred while updating the quote");
+        }
+    };
+
+    const handleConvertQuote = async (invoice) => {
+        try {
+            const token = localStorage.getItem("token");
+            const response = await fetch(`${API_BASE_URL}/api/invoices/${invoice.id}/convert`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const data = await response.json().catch(() => null);
+
+            if (response.ok) {
+                const newInvoiceNumber = data?.invoice?.invoiceNumber || data?.invoice?.id;
+                toast.success(newInvoiceNumber ? `Converted to ${newInvoiceNumber}` : "Quote converted to invoice");
+                if (setRefreshKey) {
+                    setRefreshKey(prev => prev + 1);
+                }
+            } else {
+                toast.error(data?.message || "Failed to convert quote");
+            }
+        } catch (error) {
+            console.error("Error converting quote:", error);
+            toast.error("An error occurred while converting the quote");
+        }
+    };
+
     const handleDuplicateInvoice = async (invoice) => {
         try {
             const token = localStorage.getItem("token");
+            const documentType = invoice.documentType || "invoice";
             
             // First, try to get tasks from the invoice object we already have
             let invoiceTasks = invoice.tasks;
@@ -554,24 +646,70 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
             }
             
             // Prepare tasks - ensure they have the correct structure
-            const duplicateTasks = invoiceTasks.map(task => ({
-                description: task.description || "Service",
-                hours: parseFloat(task.hours) || 1,
-                rate: parseFloat(task.rate) || 0,
-                total: parseFloat(task.total || (task.hours * task.rate)) || 0
-            }));
+            const structure = invoice.itemStructure || "hourly";
+            const duplicateTasks = invoiceTasks.map(task => {
+                const baseDescription = task.description || "Service";
+                const totalValue = parseFloat(task.total) || 0;
+                if (structure === "fixed_price") {
+                    const quantity = parseFloat(task.quantity);
+                    const unitPrice = parseFloat(task.unitPrice);
+                    return {
+                        description: baseDescription,
+                        quantity: Number.isFinite(quantity) ? quantity : 1,
+                        unitPrice: Number.isFinite(unitPrice) ? unitPrice : totalValue,
+                        total: totalValue || ((Number.isFinite(quantity) ? quantity : 1) * (Number.isFinite(unitPrice) ? unitPrice : 1))
+                    };
+                }
+                if (structure === "daily_rate") {
+                    const days = parseFloat(task.days);
+                    const rate = parseFloat(task.rate);
+                    return {
+                        description: baseDescription,
+                        days: Number.isFinite(days) ? days : 1,
+                        rate: Number.isFinite(rate) ? rate : totalValue,
+                        total: totalValue || ((Number.isFinite(days) ? days : 1) * (Number.isFinite(rate) ? rate : 1))
+                    };
+                }
+                if (structure === "simple") {
+                    const amount = parseFloat(task.amount);
+                    return {
+                        description: baseDescription,
+                        amount: Number.isFinite(amount) ? amount : totalValue,
+                        total: Number.isFinite(amount) ? amount : totalValue
+                    };
+                }
+                // default hourly
+                const hours = parseFloat(task.hours);
+                const rate = parseFloat(task.rate);
+                return {
+                    description: baseDescription,
+                    hours: Number.isFinite(hours) ? hours : 1,
+                    rate: Number.isFinite(rate) ? rate : totalValue,
+                    total: totalValue || ((Number.isFinite(hours) ? hours : 1) * (Number.isFinite(rate) ? rate : 1))
+                };
+            });
             
             // Create duplicate with modifications
+            let fallbackValidUntil = null;
+            if (documentType === "quote" && !invoice.validUntil) {
+                const future = new Date();
+                future.setDate(future.getDate() + 7);
+                fallbackValidUntil = future.toISOString().split('T')[0];
+            }
+
             const duplicateData = {
                 client: invoice.client,
                 workType: invoice.workType,
                 date: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD format
                 totalAmount: parseFloat(invoice.totalAmount),
                 currency: invoice.currency || "USD",
-                status: "Draft", // Always start as draft
+                status: documentType === "quote" ? "Draft" : "Draft",
                 tasks: duplicateTasks, // Properly formatted tasks
                 notes: invoice.notes || "",
                 clientEmail: invoice.clientEmail || "",
+                documentType,
+                validUntil: documentType === "quote" ? (invoice.validUntil || fallbackValidUntil) : null,
+                itemStructure: structure,
                 // Don't copy recurring settings - user can set them up separately
                 isRecurring: false,
                 recurringFrequency: null,
@@ -598,14 +736,16 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
             
             if (createResponse.ok) {
                 const result = await createResponse.json();
-                const message = "Invoice duplicated successfully! New invoice #" + (result.invoice?.id || 'created');
+                const message = documentType === "quote"
+                    ? "Quote duplicated successfully!"
+                    : "Invoice duplicated successfully! New invoice #" + (result.invoice?.id || 'created');
                 toast.success(message);
                 if (setRefreshKey) {
                     setRefreshKey(prev => prev + 1); // Refresh the list
                 }
             } else {
                 const error = await createResponse.json();
-                toast.error(`Failed to duplicate invoice: ${error.message || 'Unknown error'}`);
+                toast.error(`Failed to duplicate ${documentType === "quote" ? "quote" : "invoice"}: ${error.message || 'Unknown error'}`);
                 console.error("Duplicate error:", error);
             }
         } catch (error) {
@@ -646,8 +786,8 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
         <div className="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-xl border border-gray-700 flex flex-col relative overflow-visible">
             {/* Header */}
             <div className="mb-4">
-                <h3 className="text-xl sm:text-2xl font-bold text-white mb-1">Recent Invoices</h3>
-                <p className="text-gray-400 text-sm">Manage and track your invoice status</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-white mb-1">Recent Documents</h3>
+                <p className="text-gray-400 text-sm">Invoices and quotes in one place</p>
             </div>
 
             {/* Search & Filter Bar */}
@@ -657,7 +797,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input
                         type="text"
-                        placeholder="Search invoices..."
+                        placeholder="Search documents..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-gray-900 text-white placeholder-gray-400 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
@@ -676,6 +816,9 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                             <>
                                 <option value="Paid">Paid</option>
                                 <option value="Pending">Pending</option>
+                                <option value="Overdue">Overdue</option>
+                                <option value="Sent">Sent</option>
+                                <option value="Draft">Draft</option>
                             </>
                         ) : (
                             <>
@@ -683,6 +826,20 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                                 <option value="Draft">Draft</option>
                             </>
                         )}
+                        <option value="Converted">Converted</option>
+                        <option value="Accepted">Accepted</option>
+                        <option value="Declined">Declined</option>
+                    </select>
+                </div>
+                <div className="w-full md:w-48">
+                    <select
+                        value={documentTypeFilter}
+                        onChange={(e) => setDocumentTypeFilter(e.target.value)}
+                        className="w-full bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-medium border border-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    >
+                        <option value="all">All Documents</option>
+                        <option value="invoices">Invoices</option>
+                        <option value="quotes">Quotes</option>
                     </select>
                 </div>
             </div>
@@ -690,7 +847,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
             {displayedInvoices.length === 0 ? (
                 <div className="flex flex-col items-center justify-center text-center text-gray-400 py-12">
                     <Search className="w-16 h-16 mb-4 opacity-50" />
-                    <p className="text-lg font-medium">No invoices found</p>
+                    <p className="text-lg font-medium">No documents found</p>
                     <p className="text-sm">Try adjusting your search or filters</p>
                 </div>
             ) : (
@@ -700,16 +857,27 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                             <thead className="text-xs uppercase bg-gray-900/50 text-gray-400 border-b border-gray-700">
                                 <tr>
                                     <th className="px-4 sm:px-6 py-3 font-semibold">Client</th>
-                                    <th className="px-4 sm:px-6 py-3 font-semibold">Invoice #</th>
+                                    <th className="px-4 sm:px-6 py-3 font-semibold">Document #</th>
                                     <th className="px-4 sm:px-6 py-3 font-semibold">Amount</th>
                                     <th className="px-4 sm:px-6 py-3 font-semibold">Status</th>
-                                    <th className="px-4 sm:px-6 py-3 font-semibold">Invoice Date</th>
+                                    <th className="px-4 sm:px-6 py-3 font-semibold">Date</th>
                                     <th className="px-4 sm:px-6 py-3 font-semibold">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {displayedInvoices.map((invoice, index) => (
-                                    <tr key={invoice.id || index} className="border-b border-gray-700 hover:bg-gray-700/30 transition-colors duration-150">
+                                {displayedInvoices.map((invoice, index) => {
+                                    const isQuoteDocument = (invoice.documentType || "invoice") === "quote";
+                                    const docLabel = isQuoteDocument ? "Quote" : "Invoice";
+                                    const statusLabel = invoice.status || (isQuoteDocument ? "Draft" : (paymentManagementEnabled ? "Pending" : "Sent"));
+                                    const normalizedStatus = statusLabel.toLowerCase();
+                                    const statusClass = getStatusBadgeClass(statusLabel);
+                                    const isConverted = normalizedStatus === "converted" || Boolean(invoice.convertedInvoiceId);
+                                    const isAccepted = normalizedStatus === "accepted";
+                                    const isDeclined = normalizedStatus === "declined";
+                                    const documentNumber = invoice.invoiceNumber || (invoice.id ? `#${invoice.id.slice(0, 8)}` : "N/A");
+
+                                    return (
+                                        <tr key={invoice.id || index} className="border-b border-gray-700 hover:bg-gray-700/30 transition-colors duration-150">
                                         <th className="px-4 sm:px-6 py-4 font-medium text-white whitespace-nowrap">
                                             <div className="flex items-center gap-2">
                                                 <span>{invoice.client}</span>
@@ -718,29 +886,37 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                                                         Recurring
                                                     </span>
                                                 )}
+                                                {isQuoteDocument && (
+                                                    <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-400/40 rounded text-xs font-semibold">
+                                                        Quote
+                                                    </span>
+                                                )}
                                             </div>
                                         </th>
-                                        <td className="px-4 sm:px-6 py-4 text-gray-300">{invoice.invoiceNumber || `#${invoice.id.slice(0, 8)}`}</td> 
+                                        <td className="px-4 sm:px-6 py-4 text-gray-300">{documentNumber}</td> 
                                         <td className="px-4 sm:px-6 py-4 text-white font-semibold">{getCurrencySymbol(invoice.currency || "USD")}{invoice.totalAmount?.toFixed(2) || "N/A"}</td> 
                                         <td className="px-4 sm:px-6 py-4">
-                                            {paymentManagementEnabled ? (
-                                                <span className={`px-3 py-1 text-xs font-bold rounded-full text-white inline-flex items-center
-                                                    ${invoice.status?.toLowerCase() === "paid" ? "bg-green-500/20 text-green-400 border border-green-500/50" 
-                                                    : invoice.status?.toLowerCase() === "pending" ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/50" 
-                                                    : invoice.status?.toLowerCase() === "overdue" ? "bg-red-500/20 text-red-400 border border-red-500/50"
-                                                    : invoice.status?.toLowerCase() === "draft" ? "bg-gray-500/20 text-gray-400 border border-gray-500/50"
-                                                    : "bg-blue-500/20 text-blue-400 border border-blue-500/50"}`}>
-                                                    {invoice.status}
+                                            <div className="flex flex-col gap-1">
+                                                <span className={`px-3 py-1 text-xs font-bold rounded-full inline-flex items-center justify-center ${statusClass}`}>
+                                                    {statusLabel}
                                                 </span>
-                                            ) : (
-                                                <span className={`px-3 py-1 text-xs font-bold rounded-full text-white inline-flex items-center
-                                                    ${invoice.status?.toLowerCase() === "draft" ? "bg-gray-500/20 text-gray-400 border border-gray-500/50" 
-                                                    : "bg-blue-500/20 text-blue-400 border border-blue-500/50"}`}>
-                                                    {invoice.status?.toLowerCase() === "draft" ? "Draft" : "Sent"}
-                                                </span>
-                                            )}
+                                                {isQuoteDocument && isConverted && invoice.convertedInvoiceId && (
+                                                    <span className="text-xs text-gray-400">
+                                                        Converted to #{invoice.convertedInvoiceId.slice(0, 8)}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
-                                        <td className="px-4 sm:px-6 py-4 text-gray-300">{invoice.date ? new Date(invoice.date).toLocaleDateString() : "N/A"}</td> 
+                                        <td className="px-4 sm:px-6 py-4 text-gray-300">
+                                            <div className="flex flex-col">
+                                                <span>{invoice.date ? new Date(invoice.date).toLocaleDateString() : "N/A"}</span>
+                                                {isQuoteDocument && (
+                                                    <span className="text-xs text-gray-500 mt-1">
+                                                        Valid until: {invoice.validUntil ? new Date(invoice.validUntil).toLocaleDateString() : "Not set"}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td> 
                                         <td className="px-4 sm:px-6 py-4 relative">
                                             <button
                                                 className="p-2.5 bg-gradient-to-br from-gray-700 to-gray-800 rounded-lg text-gray-300 hover:from-blue-600 hover:to-blue-700 hover:text-white transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-110 border border-gray-600 hover:border-blue-500"
@@ -756,59 +932,53 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                                                 targetRef={{ current: dropdownRefs.current[index] }}
                                             >
                                                 <ul className="text-sm py-1">
-                                                    {/* Send Email */}
-                                                    <li
-                                                        className="px-4 py-2.5 hover:bg-blue-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
-                                                        onClick={() => handleMenuItemClick('sendEmail', invoice)}
-                                                    >
-                                                        <Mail className="text-blue-400 w-4 h-4" />
-                                                        <span className="font-medium">Send Email</span>
-                                                    </li>
+                                                    {!isQuoteDocument && (
+                                                        <li
+                                                            className="px-4 py-2.5 hover:bg-blue-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
+                                                            onClick={() => handleMenuItemClick('sendEmail', invoice)}
+                                                        >
+                                                            <Mail className="text-blue-400 w-4 h-4" />
+                                                            <span className="font-medium">Send {docLabel}</span>
+                                                        </li>
+                                                    )}
                                                     
-                                                    {/* Preview Invoice - Only show if PDF template was sent */}
-                                                    {invoice.status?.toLowerCase() === 'sent' && invoice.pdfTemplateSent && (
+                                                    {!isQuoteDocument && invoice.status?.toLowerCase() === 'sent' && invoice.pdfTemplateSent && (
                                                         <li 
                                                             className="px-4 py-2.5 hover:bg-purple-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
                                                             onClick={() => handleMenuItemClick('preview', invoice)}
                                                         >
                                                             <Eye className="text-purple-400 w-4 h-4" />
-                                                            <span className="font-medium">Preview Invoice</span>
+                                                            <span className="font-medium">Preview {docLabel}</span>
                                                         </li>
                                                     )}
                                                     
-                                                    {/* Download Invoice - Only show if PDF template was sent */}
-                                                    {invoice.status?.toLowerCase() === 'sent' && invoice.pdfTemplateSent && (
+                                                    {!isQuoteDocument && invoice.status?.toLowerCase() === 'sent' && invoice.pdfTemplateSent && (
                                                         <li 
                                                             className="px-4 py-2.5 hover:bg-green-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
                                                             onClick={() => handleMenuItemClick('download', invoice)}
                                                         >
                                                             <Download className="text-green-400 w-4 h-4" />
-                                                            <span className="font-medium">Download PDF</span>
+                                                            <span className="font-medium">Download {docLabel} PDF</span>
                                                         </li>
                                                     )}
                                                     
-                                                    <div className="h-px bg-gray-700 my-1"></div>
-                                                    
-                                                    {/* Edit Invoice */}
                                                     <li 
                                                         className="px-4 py-2.5 hover:bg-yellow-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
                                                         onClick={() => handleMenuItemClick('edit', invoice)}
                                                     >
                                                         <Edit className="text-yellow-400 w-4 h-4" />
-                                                        <span className="font-medium">Edit Invoice</span>
+                                                        <span className="font-medium">Edit {docLabel}</span>
                                                     </li>
                                                     
-                                                    {/* Duplicate Invoice */}
                                                     <li 
                                                         className="px-4 py-2.5 hover:bg-cyan-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
                                                         onClick={() => handleMenuItemClick('duplicate', invoice)}
                                                     >
                                                         <Copy className="text-cyan-400 w-4 h-4" />
-                                                        <span className="font-medium">Duplicate</span>
+                                                        <span className="font-medium">Duplicate {docLabel}</span>
                                                     </li>
                                                     
-                                                    {/* Start Recurring - Only show for non-recurring invoices */}
-                                                    {!invoice.isRecurring && !invoice.parentInvoiceId && (
+                                                    {!invoice.isRecurring && !invoice.parentInvoiceId && !isQuoteDocument && (
                                                         <li 
                                                             className="px-4 py-2.5 hover:bg-purple-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
                                                             onClick={() => handleMenuItemClick('startRecurring', invoice)}
@@ -818,8 +988,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                                                         </li>
                                                     )}
                                                     
-                                                    {/* Mark as Overdue - Only show if payment management is enabled */}
-                                                    {paymentManagementEnabled && (
+                                                    {paymentManagementEnabled && !isQuoteDocument && (
                                                         <li 
                                                             className="px-4 py-2.5 hover:bg-orange-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
                                                             onClick={() => handleMenuItemClick('markOverdue', invoice)}
@@ -840,21 +1009,56 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                                                         </li>
                                                     )}
                                                     
-                                                    <div className="h-px bg-gray-700 my-1"></div>
+                                                    {isQuoteDocument && (
+                                                        <>
+                                                            <div className="h-px bg-gray-700 my-1"></div>
+                                                            {!isAccepted && !isConverted && (
+                                                                <li 
+                                                                    className="px-4 py-2.5 hover:bg-purple-700 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
+                                                                    onClick={() => handleMenuItemClick('markQuoteAccepted', invoice)}
+                                                                >
+                                                                    <BadgeCheck className="text-purple-300 w-4 h-4" />
+                                                                    <span className="font-medium">Mark as Accepted</span>
+                                                                </li>
+                                                            )}
+                                                            {!isDeclined && !isConverted && (
+                                                                <li 
+                                                                    className="px-4 py-2.5 hover:bg-red-700 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
+                                                                    onClick={() => handleMenuItemClick('markQuoteDeclined', invoice)}
+                                                                >
+                                                                    <XOctagon className="text-red-300 w-4 h-4" />
+                                                                    <span className="font-medium">Mark as Declined</span>
+                                                                </li>
+                                                            )}
+                                                            {!isConverted && (
+                                                                <li 
+                                                                    className="px-4 py-2.5 hover:bg-indigo-700 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
+                                                                    onClick={() => handleMenuItemClick('convertQuote', invoice)}
+                                                                >
+                                                                    <ArrowRightCircle className="text-indigo-300 w-4 h-4" />
+                                                                    <span className="font-medium">Convert to Invoice</span>
+                                                                </li>
+                                                            )}
+                                                        </>
+                                                    )}
+
+                                                    {!isQuoteDocument && (
+                                                        <div className="h-px bg-gray-700 my-1"></div>
+                                                    )}
                                                     
-                                                    {/* Delete Invoice */}
                                                     <li 
                                                         className="px-4 py-2.5 hover:bg-red-600 flex items-center gap-3 cursor-pointer text-gray-300 hover:text-white transition-colors duration-150"
                                                         onClick={() => handleMenuItemClick('delete', invoice)}
                                                     >
                                                         <Trash2 className="text-red-400 w-4 h-4" />
-                                                        <span className="font-medium">Delete Invoice</span>
+                                                        <span className="font-medium">Delete {docLabel}</span>
                                                     </li>
                                                 </ul>
                                             </DropdownPortal>
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
