@@ -3,8 +3,10 @@ import { useSearchParams } from "react-router-dom";
 import { FaDollarSign, FaClock, FaFileInvoice, FaChartLine, FaPlus, FaFileSignature } from "react-icons/fa";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import NewInvoiceModal from "./NewInvoiceModal";
+import NewExpenseModal from "./NewExpenseModal";
 import { useNavigate } from "react-router-dom";
 import RecentInvoices from "./RecentInvoices";
+import RecentExpenses from "./RecentExpenses";
 import RecentActivity from "./RecentActivity";
 import RecurringEmailsCard from "./RecurringEmailsCard";
 import { usePaymentManagement } from "../context/PaymentContext";
@@ -21,7 +23,9 @@ export default function InvoicesDashboard() {
         searchParams.get('docType') === 'quote' ? 'quote' : 'invoice'
     );
     const [invoices, setInvoices] = useState([]);
+    const [expenses, setExpenses] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [expensesLoading, setExpensesLoading] = useState(true);
     const navigate = useNavigate();
     const [dropdownIndex, setDropdownIndex] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
@@ -36,9 +40,10 @@ export default function InvoicesDashboard() {
     });
     const [setupModalOpen, setSetupModalOpen] = useState(false);
     const [setupSnoozed, setSetupSnoozed] = useState(false);
+    const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
     const statsGridClasses = paymentManagementEnabled
         ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8"
-        : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 max-w-3xl gap-4 sm:gap-6 mb-8";
+        : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl gap-4 sm:gap-6 mb-8";
 
     const evaluateBankDetails = useCallback((details = {}) => {
         if (!details) return true;
@@ -100,6 +105,9 @@ export default function InvoicesDashboard() {
         setSearchParams({});
     };
 
+    const openNewExpenseModal = () => setIsExpenseModalOpen(true);
+    const closeNewExpenseModal = () => setIsExpenseModalOpen(false);
+
     useEffect(() => {
       const token = localStorage.getItem("token");
       if (!token) {
@@ -137,6 +145,26 @@ export default function InvoicesDashboard() {
         window.addEventListener("open-new-invoice-modal", handler);
         return () => window.removeEventListener("open-new-invoice-modal", handler);
     }, []);
+
+    const fetchExpenses = useCallback(async () => {
+        try {
+            setExpensesLoading(true);
+            const token = localStorage.getItem("token");
+            const response = await fetch(`${API_BASE_URL}/api/expenses`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setExpenses(data);
+            } else {
+                console.error("Failed to fetch expenses");
+            }
+        } catch (error) {
+            console.error("Error fetching expenses:", error);
+        } finally {
+            setExpensesLoading(false);
+        }
+    }, []);
   
     // ✅ Fetch Invoices from Backend
     useEffect(() => {
@@ -164,6 +192,10 @@ export default function InvoicesDashboard() {
         fetchInvoices();
     }, [refreshKey]);
 
+    useEffect(() => {
+        fetchExpenses();
+    }, [fetchExpenses, refreshKey]);
+
     // ✅ Memoized invoice stats for performance
     const invoiceStats = useMemo(() => {
         const invoiceDocuments = invoices.filter(inv => (inv.documentType || "invoice") !== "quote");
@@ -185,6 +217,16 @@ export default function InvoicesDashboard() {
         return { total, paid, pending, totalRevenue, quotes: quotes.length, openQuotes: openQuotes.length };
     }, [invoices]);
 
+    const expenseStats = useMemo(() => {
+        if (!expenses.length) {
+            return { totalSpent: 0, pendingReview: 0, matched: 0 };
+        }
+        const totalSpent = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+        const pendingReview = expenses.filter((expense) => expense.status === "pending_review").length;
+        const matched = expenses.filter((expense) => expense.status === "matched").length;
+        return { totalSpent, pendingReview, matched };
+    }, [expenses]);
+
     return (
         <div className="p-4 sm:p-6 lg:p-8 bg-gray-900 min-h-screen text-white">
             <div className="mb-6 sm:mb-8">
@@ -198,6 +240,13 @@ export default function InvoicesDashboard() {
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-3">
+                        <button
+                            onClick={openNewExpenseModal}
+                            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gray-800/80 border border-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700/80 transition-all duration-200"
+                        >
+                            <FaDollarSign className="text-base" />
+                            <span>New Expense</span>
+                        </button>
                         <button
                             onClick={() => openNewInvoiceModal("quote")}
                             className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gray-800/80 border border-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700/80 transition-all duration-200"
@@ -242,6 +291,16 @@ export default function InvoicesDashboard() {
                         bgGradient="from-purple-500/10 to-pink-500/10"
                         borderColor="border-purple-400/40"
                         hoverBorderColor="hover:border-purple-400/70"
+                    />
+                    <DashboardCard
+                        title="Expenses"
+                        amount={`$${expenseStats.totalSpent.toFixed(2)}`}
+                        percentage={`${expenseStats.pendingReview} pending`}
+                        percentageColor="text-teal-300"
+                        icon={<FaDollarSign className="text-teal-300 text-4xl sm:text-5xl" />}
+                        bgGradient="from-teal-500/10 to-blue-500/10"
+                        borderColor="border-teal-400/40"
+                        hoverBorderColor="hover:border-teal-400/70"
                     />
                     {paymentManagementEnabled && (
                         <>
@@ -298,6 +357,14 @@ export default function InvoicesDashboard() {
                 />
             </div>
 
+            <div className="mb-6">
+                <RecentExpenses
+                    expenses={expenses}
+                    loading={expensesLoading}
+                    onCreateExpense={openNewExpenseModal}
+                />
+            </div>
+
             {/* Two Column Layout - Recent Activity & Recurring Emails */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
                 <RecentActivity paymentManagementEnabled={paymentManagementEnabled} refreshKey={refreshKey} />
@@ -320,6 +387,16 @@ export default function InvoicesDashboard() {
                 onClose={closeNewInvoiceModal}
                 setRefreshKey={setRefreshKey}
                 initialDocumentType={initialDocumentType}
+            />
+
+            <NewExpenseModal
+                isOpen={isExpenseModalOpen}
+                onClose={closeNewExpenseModal}
+                onSaved={() => {
+                    closeNewExpenseModal();
+                    fetchExpenses();
+                    toast.success("Expense added to your ledger.");
+                }}
             />
 
             <SetupAssistantModal
