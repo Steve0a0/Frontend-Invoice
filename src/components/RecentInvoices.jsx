@@ -8,6 +8,7 @@ import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import StopRecurringModal from "./StopRecurringModal";
 import InvoicePreviewModal from "./InvoicePreviewModal";
 import EditInvoiceModal from "./EditInvoiceModal";
+import BankDetailsConfirmationModal from "./BankDetailsConfirmationModal";
 import { API_BASE_URL } from '../config/api';
 
 
@@ -28,6 +29,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
     const [invoiceToStopRecurring, setInvoiceToStopRecurring] = useState(null);
     const [emailTemplates, setEmailTemplates] = useState([]);
     const [invoiceTemplates, setInvoiceTemplates] = useState([]);
+    const [bankConfirmationOpen, setBankConfirmationOpen] = useState(false);
     const [recurringConfig, setRecurringConfig] = useState({
         frequency: 'monthly',
         clientEmail: '',
@@ -36,6 +38,12 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
         emailTemplateId: '',
         invoiceTemplateId: ''
     });
+
+    useEffect(() => {
+        if (!isRecurringModalOpen) {
+            setBankConfirmationOpen(false);
+        }
+    }, [isRecurringModalOpen]);
 
     // Get currency symbol based on currency code
     const getCurrencySymbol = (currency) => {
@@ -454,6 +462,7 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
             if (response.ok) {
                 toast.success(`Recurring invoices started for ${selectedInvoice.client}!`);
                 setIsRecurringModalOpen(false);
+                setBankConfirmationOpen(false);
                 if (setRefreshKey) {
                     setRefreshKey(prev => prev + 1);
                 }
@@ -464,6 +473,25 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
             console.error("Error starting recurring invoice:", error);
             toast.error("An error occurred while starting the recurring invoice");
         }
+    };
+
+    const handleStartRecurringSubmit = () => {
+        setBankConfirmationOpen(true);
+    };
+
+    const markRecurringBankConfirmed = () => {
+        if (!selectedInvoice?.id) return;
+        localStorage.setItem(`bank-confirmed-recurring-${selectedInvoice.id}`, "confirmed");
+    };
+
+    const handleConfirmRecurringBankDetails = () => {
+        setBankConfirmationOpen(false);
+        markRecurringBankConfirmed();
+        submitRecurringConfig();
+    };
+
+    const handleCancelRecurringBankDetails = () => {
+        setBankConfirmationOpen(false);
     };
 
     const handleMarkOverdue = async (invoice) => {
@@ -1228,13 +1256,16 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                         {/* Footer */}
                         <div className="bg-gray-900 border-t border-gray-700 p-5 flex justify-end space-x-3 flex-shrink-0">
                             <button
-                                onClick={() => setIsRecurringModalOpen(false)}
+                                onClick={() => {
+                                    setIsRecurringModalOpen(false);
+                                    setBankConfirmationOpen(false);
+                                }}
                                 className="px-6 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-all duration-200 font-medium"
                             >
                                 Cancel
                             </button>
                             <button
-                                onClick={submitRecurringConfig}
+                                onClick={handleStartRecurringSubmit}
                                 className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-all duration-200 font-semibold shadow-lg hover:shadow-purple-500/50 flex items-center gap-2"
                             >
                                 <RotateCw className="w-4 h-4" />
@@ -1244,11 +1275,16 @@ const RecentInvoices = memo(({ invoices = [], currentPage, setCurrentPage, payme
                     </div>
                 </div>
             )}
+
+            <BankDetailsConfirmationModal
+                isOpen={bankConfirmationOpen}
+                onConfirm={handleConfirmRecurringBankDetails}
+                onCancel={handleCancelRecurringBankDetails}
+                confirmText="Looks Good – Start Recurring"
+                infoMessage="Recurring invoices will include these bank details in every automated email. Confirm once before enabling automation."
+            />
         </div>
     );
 });
 
 export default RecentInvoices;
-
-
-

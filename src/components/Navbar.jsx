@@ -104,7 +104,7 @@ export default function Navbar() {
               className="flex items-center space-x-2 bg-gray-800 text-gray-200 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-full transition-all duration-200 border border-gray-600/40 text-sm font-medium"
             >
               <FaCog className="w-4 h-4 text-blue-400" />
-              <span>Settings</span>
+              {/* <span>Settings</span> */}
             </Link>
 
             {/* Profile Dropdown */}

@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import ChooseTemplateModal from "./chooseTemplateModal"; 
 import { usePaymentManagement } from "../context/PaymentContext";
 import { API_BASE_URL } from '../config/api';
+import BankDetailsConfirmationModal from "./BankDetailsConfirmationModal";
 
 function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
     if (!invoice) return null;
@@ -34,6 +35,7 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
     const { paymentManagementEnabled } = usePaymentManagement();
     const [createdInvoiceId, setCreatedInvoiceId] = useState(invoice.id || null);
     const [isSending, setIsSending] = useState(false);
+    const [confirmBankModalOpen, setConfirmBankModalOpen] = useState(false);
     
     // Helper functions to manage template modal URL state
     const openTemplateModal = () => {
@@ -44,6 +46,41 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
     const closeTemplateModal = () => {
         setIsTemplateModalOpen(false);
         setSearchParams({});
+    };
+
+    const getStoredUserId = () => {
+        try {
+            const raw = localStorage.getItem("user");
+            if (!raw) return "anonymous";
+            const parsed = JSON.parse(raw);
+            return parsed?.id || parsed?._id || "anonymous";
+        } catch {
+            return "anonymous";
+        }
+    };
+
+    const isRecurringInvoice = Boolean(invoice?.isRecurring);
+
+    const confirmationStorageKey = () => {
+        if (!isRecurringInvoice || !invoice?.id) return null;
+        return `bank-confirmed-recurring-${invoice.id}`;
+    };
+
+    const requiresBankConfirmation = () => {
+        if (!isRecurringInvoice) {
+            return true;
+        }
+        const key = confirmationStorageKey();
+        if (!key) return true;
+        const confirmedFlag = localStorage.getItem(key);
+        return confirmedFlag !== "confirmed";
+    };
+
+    const markBankDetailsConfirmed = () => {
+        if (!isRecurringInvoice) return;
+        const key = confirmationStorageKey();
+        if (!key) return;
+        localStorage.setItem(key, "confirmed");
     };
 
     // Fetch email templates
@@ -92,7 +129,7 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
         }
     };
     
-    const handleSendEmail = async () => {
+    const executeSendEmail = async () => {
         if (!recipientEmail || !emailSubject || !customEmail) {
             toast.error("Please fill all required fields.");
             return;
@@ -263,7 +300,24 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
             setIsSending(false);
         }
     };
-    
+
+    const handleSendEmail = () => {
+        if (requiresBankConfirmation()) {
+            setConfirmBankModalOpen(true);
+            return;
+        }
+        executeSendEmail();
+    };
+
+    const handleConfirmBankDetails = () => {
+        markBankDetailsConfirmed();
+        setConfirmBankModalOpen(false);
+        executeSendEmail();
+    };
+
+    const handleCancelBankConfirmation = () => {
+        setConfirmBankModalOpen(false);
+    };
 
     // Handle invoice template selection from modal
     const handleInvoiceTemplateSelect = async (template) => {
@@ -744,6 +798,18 @@ function SendInvoiceModal({ invoice, onClose, isNewInvoice = false }) {
                         animation: slideUp 0.3s ease-out;
                     }
                 `}</style>
+
+                <BankDetailsConfirmationModal
+                    isOpen={confirmBankModalOpen}
+                    onConfirm={handleConfirmBankDetails}
+                    onCancel={handleCancelBankConfirmation}
+                    confirmText="Looks Good – Send Invoice"
+                    infoMessage={
+                        isRecurringInvoice
+                            ? "Recurring invoices will continue using these bank details automatically after this confirmation."
+                            : "Manual sends always show this reminder. For recurring invoices, you only confirm once; we remember it for automated emails."
+                    }
+                />
 
                 {/* Template Selection Modal */}
                 {isTemplateModalOpen && (
